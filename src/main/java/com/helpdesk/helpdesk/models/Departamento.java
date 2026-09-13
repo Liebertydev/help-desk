@@ -18,6 +18,9 @@ public class Departamento {
     
     private Boolean ativo = true;
     
+    public Departamento() {
+    }
+
     public Departamento(String nome) {
         this.nome = nome;
         this.ativo = true;
