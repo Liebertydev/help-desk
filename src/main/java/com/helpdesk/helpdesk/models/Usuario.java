@@ -47,7 +47,9 @@ public class Usuario {
 
     public Usuario() {
     }
-
+    
+    // O construtor abaixo possui parâmetros para inicializar os campos obrigatórios do usuário, como nome, email, senha, ocupação e departamento.
+    //  Além disso, ele define o usuário como ativo e atribui a função padrão de USER.
     public Usuario(
             String name,
             String email,
