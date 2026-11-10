@@ -112,7 +112,8 @@ public class ChamadoController {
     }
 
     // Body: { "status": "EM_ANDAMENTO" }
-    @PermitirRoles({ Role.TECHNICIAN, Role.ADMIN })
+    // Técnico e admin: fluxo completo. Dono do chamado: só depois de RESOLVIDO,
+    // para FECHADO (aceitar a solução) ou EM_ANDAMENTO (reabrir). Regra no service.
     @PatchMapping("/{id}/status")
     public ChamadoResponse alterarStatus(
             @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,

@@ -3,6 +3,7 @@ package com.helpdesk.helpdesk.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -65,6 +66,10 @@ class ChamadoServiceTest {
 
         joao = usuario(10L, "João", Role.USER);
         tecnico = usuario(20L, "Carlos", Role.TECHNICIAN);
+
+        // lenient: nem todo teste usa o técnico como usuário logado,
+        // e o Mockito não deve reclamar desse stub quando ele sobrar.
+        lenient().when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
     }
 
     // ---------- abrir ----------
@@ -158,6 +163,57 @@ class ChamadoServiceTest {
 
         assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 20L))
                 .isInstanceOf(RegraNegocioException.class);
+    }
+
+    // ---------- alterarStatus pelo dono do chamado ----------
+
+    @Test
+    void alterarStatus_donoPodeFecharChamadoResolvido() {
+        Chamado chamado = chamado(StatusChamado.RESOLVIDO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        ChamadoResponse resposta = chamadoService.alterarStatus(1L, StatusChamado.FECHADO, 10L);
+
+        assertThat(resposta.status()).isEqualTo(StatusChamado.FECHADO);
+        assertThat(historicoSalvo().getAutor()).isEqualTo(joao);
+    }
+
+    @Test
+    void alterarStatus_donoPodeReabrirChamadoResolvido() {
+        Chamado chamado = chamado(StatusChamado.RESOLVIDO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        ChamadoResponse resposta = chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 10L);
+
+        assertThat(resposta.status()).isEqualTo(StatusChamado.EM_ANDAMENTO);
+    }
+
+    @Test
+    void alterarStatus_donoNaoPodeMudarAntesDeResolvido() {
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.RESOLVIDO, 10L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("RESOLVIDO");
+
+        assertThat(chamado.getStatus()).isEqualTo(StatusChamado.EM_ANDAMENTO);
+    }
+
+    @Test
+    void alterarStatus_outroUsuarioComumNaoPodeMudar() {
+        Usuario ana = usuario(30L, "Ana", Role.USER);
+        Chamado chamado = chamado(StatusChamado.RESOLVIDO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(30L)).thenReturn(ana);
+
+        assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.FECHADO, 30L))
+                .isInstanceOf(AcessoNegadoException.class);
+
+        verify(historicoRepository, never()).save(any());
     }
 
     // ---------- atualizar ----------
