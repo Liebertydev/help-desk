@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.helpdesk.helpdesk.dto.ChamadoRequest;
 import com.helpdesk.helpdesk.dto.ChamadoResponse;
 import com.helpdesk.helpdesk.dto.ChamadoUpdateRequest;
+import com.helpdesk.helpdesk.exception.AcessoNegadoException;
 import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Chamado;
@@ -80,9 +81,12 @@ public class ChamadoService {
         return paraResponse(chamadoRepository.findByTecnicoIdOrderByCreatedAtDesc(tecnicoId));
     }
 
+    /** @param usuarioLogadoId quem está pedindo: precisa ser o dono, técnico ou admin. */
     @Transactional(readOnly = true)
-    public ChamadoResponse buscarPorId(Long id) {
-        return ChamadoResponse.from(buscarEntidade(id));
+    public ChamadoResponse buscarPorId(Long id, Long usuarioLogadoId) {
+        Chamado chamado = buscarEntidade(id);
+        garantirAcesso(chamado, usuarioLogadoId);
+        return ChamadoResponse.from(chamado);
     }
 
     // ---------- Abertura e edição ----------
@@ -123,9 +127,11 @@ public class ChamadoService {
         return ChamadoResponse.from(chamadoRepository.save(chamado));
     }
 
+    /** @param usuarioLogadoId quem está editando: precisa ser o dono, técnico ou admin. */
     @Transactional
-    public ChamadoResponse atualizar(Long id, ChamadoUpdateRequest request) {
+    public ChamadoResponse atualizar(Long id, ChamadoUpdateRequest request, Long usuarioLogadoId) {
         Chamado chamado = buscarEntidade(id);
+        garantirAcesso(chamado, usuarioLogadoId);
         garantirQueNaoEstaFechado(chamado);
 
         chamado.setTitulo(request.titulo().trim());
@@ -193,6 +199,21 @@ public class ChamadoService {
     }
 
     // ---------- Auxiliares ----------
+
+    /**
+     * Usuário comum só acessa os chamados que ele mesmo abriu.
+     * Técnicos e admins acessam qualquer chamado (fazem o atendimento).
+     */
+    private void garantirAcesso(Chamado chamado, Long usuarioLogadoId) {
+        if (chamado.getUsuario().getId().equals(usuarioLogadoId)) {
+            return;
+        }
+
+        Role role = usuarioService.buscarEntidade(usuarioLogadoId).getRole();
+        if (role != Role.TECHNICIAN && role != Role.ADMIN) {
+            throw new AcessoNegadoException("Você só pode acessar os chamados que abriu.");
+        }
+    }
 
     private void garantirQueNaoEstaFechado(Chamado chamado) {
         if (chamado.getStatus() == StatusChamado.FECHADO) {

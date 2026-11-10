@@ -19,6 +19,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.helpdesk.helpdesk.dto.ChamadoRequest;
 import com.helpdesk.helpdesk.dto.ChamadoResponse;
 import com.helpdesk.helpdesk.dto.ChamadoUpdateRequest;
+import com.helpdesk.helpdesk.exception.AcessoNegadoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Chamado;
 import com.helpdesk.helpdesk.models.Departamento;
@@ -158,9 +159,59 @@ class ChamadoServiceTest {
         ChamadoUpdateRequest request = new ChamadoUpdateRequest(
                 "Novo título", "Nova descrição", null, null, null, null, null, null, Prioridade.ALTA, null);
 
-        assertThatThrownBy(() -> chamadoService.atualizar(1L, request))
+        assertThatThrownBy(() -> chamadoService.atualizar(1L, request, 10L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("fechado");
+    }
+
+    // ---------- acesso ao chamado ----------
+
+    @Test
+    void buscarPorId_donoPodeVerOProprioChamado() {
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+
+        ChamadoResponse resposta = chamadoService.buscarPorId(1L, 10L);
+
+        assertThat(resposta.usuarioNome()).isEqualTo("João");
+    }
+
+    @Test
+    void buscarPorId_outroUsuarioComumNaoPodeVer() {
+        Usuario ana = usuario(30L, "Ana", Role.USER);
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(30L)).thenReturn(ana);
+
+        assertThatThrownBy(() -> chamadoService.buscarPorId(1L, 30L))
+                .isInstanceOf(AcessoNegadoException.class);
+    }
+
+    @Test
+    void buscarPorId_tecnicoPodeVerChamadoDeOutraPessoa() {
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
+
+        ChamadoResponse resposta = chamadoService.buscarPorId(1L, 20L);
+
+        assertThat(resposta.id()).isEqualTo(1L);
+    }
+
+    @Test
+    void atualizar_outroUsuarioComumNaoPodeEditar() {
+        Usuario ana = usuario(30L, "Ana", Role.USER);
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(30L)).thenReturn(ana);
+
+        ChamadoUpdateRequest request = new ChamadoUpdateRequest(
+                "Título alterado", "Descrição", null, null, null, null, null, null, Prioridade.ALTA, null);
+
+        assertThatThrownBy(() -> chamadoService.atualizar(1L, request, 30L))
+                .isInstanceOf(AcessoNegadoException.class);
+
+        assertThat(chamado.getTitulo()).isEqualTo("Título");
     }
 
     // ---------- auxiliares ----------
