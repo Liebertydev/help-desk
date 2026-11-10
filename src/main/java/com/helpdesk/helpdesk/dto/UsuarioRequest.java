@@ -25,7 +25,8 @@ public record UsuarioRequest(
         String password,
 
         // Opcional. Aceita com ou sem máscara: 12345678901 ou 123.456.789-01.
-        @Pattern(regexp = "^(\\d{11}|\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2})?$", message = "CPF deve ter 11 dígitos.")
+        // Espaços em volta são aceitos: o service remove e, se sobrar vazio, grava null.
+        @Pattern(regexp = "^\\s*(\\d{11}|\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2})?\\s*$", message = "CPF deve ter 11 dígitos.")
         String cpf,
 
         @Size(max = 30, message = "A matrícula deve ter no máximo 30 caracteres.")
