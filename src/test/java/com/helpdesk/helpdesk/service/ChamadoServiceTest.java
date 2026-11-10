@@ -63,7 +63,7 @@ class ChamadoServiceTest {
         when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
         when(chamadoRepository.save(any(Chamado.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        ChamadoResponse resposta = chamadoService.abrir(requestAbertura(null));
+        ChamadoResponse resposta = chamadoService.abrir(requestAbertura(null), 10L);
 
         assertThat(resposta.status()).isEqualTo(StatusChamado.ABERTO);
         assertThat(resposta.prioridade()).isEqualTo(Prioridade.MEDIA);
@@ -76,7 +76,7 @@ class ChamadoServiceTest {
         joao.setAtivo(false);
         when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
 
-        assertThatThrownBy(() -> chamadoService.abrir(requestAbertura(null)))
+        assertThatThrownBy(() -> chamadoService.abrir(requestAbertura(null), 10L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("desativado");
 
@@ -167,7 +167,7 @@ class ChamadoServiceTest {
 
     private ChamadoRequest requestAbertura(Long departamentoId) {
         return new ChamadoRequest("Impressora não imprime", "Papel atolado.", "Hardware",
-                "PAT-1", "Impressora", null, null, null, null, 10L, departamentoId);
+                "PAT-1", "Impressora", null, null, null, null, departamentoId);
     }
 
     private Usuario usuario(Long id, String nome, Role role) {

@@ -3,13 +3,12 @@ package com.helpdesk.helpdesk.dto;
 import com.helpdesk.helpdesk.models.Prioridade;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
  * Dados para abrir um chamado.
  *
- * - usuarioId: quem está abrindo. Enquanto não houver login, vem no corpo da requisição.
+ * Quem abre o chamado NÃO vem aqui: é o usuário logado (vem do token).
  * - departamentoId: opcional. Se não vier, usa o departamento do usuário.
  * - prioridade: opcional. Se não vier, fica MEDIA.
  */
@@ -42,9 +41,6 @@ public record ChamadoRequest(
         String detalheLocal,
 
         Prioridade prioridade,
-
-        @NotNull(message = "O usuário que abre o chamado é obrigatório.")
-        Long usuarioId,
 
         Long departamentoId) {
 }

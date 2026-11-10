@@ -5,7 +5,6 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoRequest;
 import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoResponse;
 import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
@@ -58,9 +57,10 @@ public class SolicitacaoService {
 
     // ---------- Ações ----------
 
+    /** @param usuarioId quem está pedindo (o usuário logado). */
     @Transactional
-    public SolicitacaoTecnicoResponse solicitar(SolicitacaoTecnicoRequest request) {
-        Usuario usuario = usuarioService.buscarEntidade(request.usuarioId());
+    public SolicitacaoTecnicoResponse solicitar(Long usuarioId) {
+        Usuario usuario = usuarioService.buscarEntidade(usuarioId);
 
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("Usuário desativado não pode fazer solicitações.");

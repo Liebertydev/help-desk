@@ -14,8 +14,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.helpdesk.helpdesk.auth.PermitirRoles;
+import com.helpdesk.helpdesk.auth.Publico;
 import com.helpdesk.helpdesk.dto.DepartamentoRequest;
 import com.helpdesk.helpdesk.dto.DepartamentoResponse;
+import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.service.DepartamentoService;
 
 import jakarta.validation.Valid;
@@ -35,7 +38,9 @@ public class DepartamentoController {
         this.departamentoService = departamentoService;
     }
 
+    // Público: a tela de cadastro precisa listar os departamentos antes do login.
     // GET /api/departamentos?apenasAtivos=true
+    @Publico
     @GetMapping
     public List<DepartamentoResponse> listar(@RequestParam(defaultValue = "false") boolean apenasAtivos) {
         return departamentoService.listar(apenasAtivos);
@@ -47,24 +52,28 @@ public class DepartamentoController {
     }
 
     // 201 Created + cabeçalho Location apontando para o novo recurso.
+    @PermitirRoles(Role.ADMIN)
     @PostMapping
     public ResponseEntity<DepartamentoResponse> criar(@RequestBody @Valid DepartamentoRequest request) {
         DepartamentoResponse criado = departamentoService.criar(request);
         return ResponseEntity.created(URI.create("/api/departamentos/" + criado.id())).body(criado);
     }
 
+    @PermitirRoles(Role.ADMIN)
     @PutMapping("/{id}")
     public DepartamentoResponse atualizar(@PathVariable Long id, @RequestBody @Valid DepartamentoRequest request) {
         return departamentoService.atualizar(id, request);
     }
 
     // 204 No Content: deu certo, mas não há corpo para devolver.
+    @PermitirRoles(Role.ADMIN)
     @PatchMapping("/{id}/desativar")
     public ResponseEntity<Void> desativar(@PathVariable Long id) {
         departamentoService.desativar(id);
         return ResponseEntity.noContent().build();
     }
 
+    @PermitirRoles(Role.ADMIN)
     @PatchMapping("/{id}/ativar")
     public ResponseEntity<Void> ativar(@PathVariable Long id) {
         departamentoService.ativar(id);
