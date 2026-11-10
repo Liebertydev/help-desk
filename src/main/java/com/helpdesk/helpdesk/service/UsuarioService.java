@@ -10,6 +10,7 @@ import com.helpdesk.helpdesk.dto.AlterarSenhaRequest;
 import com.helpdesk.helpdesk.dto.UsuarioRequest;
 import com.helpdesk.helpdesk.dto.UsuarioResponse;
 import com.helpdesk.helpdesk.dto.UsuarioUpdateRequest;
+import com.helpdesk.helpdesk.exception.AcessoNegadoException;
 import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
@@ -20,9 +21,9 @@ import com.helpdesk.helpdesk.repository.UsuarioRepository;
 /**
  * Regras de negócio de usuário.
  *
- * Observação: ainda não há autenticação, então o service não sabe QUEM está
- * fazendo a ação. Quando o login existir, o controller deve garantir que só
- * ADMIN pode chamar alterarRole, ativar e desativar.
+ * Quem pode chamar cada ação (ex.: só ADMIN altera roles) é definido nos
+ * controllers com @PermitirRoles. Regras que dependem de QUEM pede e de QUAL
+ * usuário é acessado (ex.: ver dados pessoais) ficam aqui no service.
  */
 @Service
 public class UsuarioService {
@@ -52,8 +53,21 @@ public class UsuarioService {
                 .toList();
     }
 
+    /**
+     * A resposta tem dados pessoais (CPF, matrícula, e-mail), então um usuário
+     * comum só vê os próprios dados. Técnicos e admins veem qualquer usuário,
+     * porque precisam deles no atendimento e na administração.
+     *
+     * @param usuarioLogadoId quem está pedindo.
+     */
     @Transactional(readOnly = true)
-    public UsuarioResponse buscarPorId(Long id) {
+    public UsuarioResponse buscarPorId(Long id, Long usuarioLogadoId) {
+        if (!id.equals(usuarioLogadoId)) {
+            Role role = buscarEntidade(usuarioLogadoId).getRole();
+            if (role != Role.TECHNICIAN && role != Role.ADMIN) {
+                throw new AcessoNegadoException("Você só pode ver os seus próprios dados.");
+            }
+        }
         return UsuarioResponse.from(buscarEntidade(id));
     }
 
