@@ -22,6 +22,7 @@ import com.helpdesk.helpdesk.dto.AlterarSenhaRequest;
 import com.helpdesk.helpdesk.dto.UsuarioRequest;
 import com.helpdesk.helpdesk.dto.UsuarioResponse;
 import com.helpdesk.helpdesk.dto.UsuarioUpdateRequest;
+import com.helpdesk.helpdesk.exception.AcessoNegadoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.models.Role;
@@ -180,6 +181,39 @@ class UsuarioServiceTest {
                 .isInstanceOf(RegraNegocioException.class);
 
         assertThat(admin.isAtivo()).isTrue();
+    }
+
+    @Test
+    void buscarPorId_usuarioVeOsProprioDados() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+
+        UsuarioResponse resposta = usuarioService.buscarPorId(10L, 10L);
+
+        assertThat(resposta.id()).isEqualTo(10L);
+    }
+
+    @Test
+    void buscarPorId_usuarioComumNaoVeDadosDeOutro() {
+        Usuario logado = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(logado));
+
+        assertThatThrownBy(() -> usuarioService.buscarPorId(20L, 10L))
+                .isInstanceOf(AcessoNegadoException.class);
+
+        verify(usuarioRepository, never()).findById(20L);
+    }
+
+    @Test
+    void buscarPorId_tecnicoVeDadosDeOutro() {
+        Usuario tecnico = usuarioComId(10L, Role.TECHNICIAN);
+        Usuario outro = usuarioComId(20L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(tecnico));
+        when(usuarioRepository.findById(20L)).thenReturn(Optional.of(outro));
+
+        UsuarioResponse resposta = usuarioService.buscarPorId(20L, 10L);
+
+        assertThat(resposta.id()).isEqualTo(20L);
     }
 
     private Usuario usuarioComId(Long id, Role role) {

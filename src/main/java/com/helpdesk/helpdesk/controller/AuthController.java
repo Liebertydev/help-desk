@@ -47,6 +47,6 @@ public class AuthController {
     // Dados de quem está logado (o front usa para saber o nome e o role).
     @GetMapping("/me")
     public UsuarioResponse me(@RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId) {
-        return usuarioService.buscarPorId(usuarioLogadoId);
+        return usuarioService.buscarPorId(usuarioLogadoId, usuarioLogadoId);
     }
 }

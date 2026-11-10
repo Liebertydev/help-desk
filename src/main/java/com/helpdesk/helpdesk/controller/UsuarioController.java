@@ -50,9 +50,12 @@ public class UsuarioController {
         return usuarioService.listar(role);
     }
 
+    // Dados pessoais: usuário comum só vê os próprios; técnico e admin veem todos (regra no service).
     @GetMapping("/{id}")
-    public UsuarioResponse buscarPorId(@PathVariable Long id) {
-        return usuarioService.buscarPorId(id);
+    public UsuarioResponse buscarPorId(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id) {
+        return usuarioService.buscarPorId(id, usuarioLogadoId);
     }
 
     // Público: é o cadastro (auto-registro). Todo usuário novo nasce USER.
