@@ -33,7 +33,10 @@ public class Chamado {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String descricao;
 
-    private String categoria;
+    // Sem categoria informada, o chamado fica como OUTROS.
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Categoria categoria = Categoria.OUTROS;
 
     // String em vez de int: aceita zeros à esquerda e letras (ex.: "000123", "PAT-45")
     // e pode ficar nulo quando o chamado não envolve um equipamento.
@@ -56,9 +59,11 @@ public class Chamado {
     @JoinColumn(name = "departamento_id", nullable = false)
     private Departamento departamento;
 
+    // Endereço físico do problema: local (bloco/prédio) → sala → detalheLocal.
+    // Não confundir com o departamento, que é a área responsável pelo chamado.
     private String local;
 
-    private String setor;
+    private String sala;
 
     private String detalheLocal;
 
@@ -88,11 +93,11 @@ public class Chamado {
     public Chamado() {
     }
 
-    public Chamado(String titulo, String descricao, String categoria, String numeroPatrimonio,
+    public Chamado(String titulo, String descricao, Categoria categoria, String numeroPatrimonio,
             String equipamento, Usuario usuario, Usuario tecnico, Departamento departamento) {
         this.titulo = titulo;
         this.descricao = descricao;
-        this.categoria = categoria;
+        this.categoria = categoria == null ? Categoria.OUTROS : categoria;
         this.numeroPatrimonio = numeroPatrimonio;
         this.equipamento = equipamento;
         this.usuario = usuario;
@@ -124,11 +129,11 @@ public class Chamado {
         this.descricao = descricao;
     }
 
-    public String getCategoria() {
+    public Categoria getCategoria() {
         return categoria;
     }
 
-    public void setCategoria(String categoria) {
+    public void setCategoria(Categoria categoria) {
         this.categoria = categoria;
     }
 
@@ -180,12 +185,12 @@ public class Chamado {
         this.local = local;
     }
 
-    public String getSetor() {
-        return setor;
+    public String getSala() {
+        return sala;
     }
 
-    public void setSetor(String setor) {
-        this.setor = setor;
+    public void setSala(String sala) {
+        this.sala = sala;
     }
 
     public String getDetalheLocal() {

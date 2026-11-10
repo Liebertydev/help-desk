@@ -34,6 +34,17 @@ public class SolicitacaoTecnico {
     @Column(nullable = false)
     private StatusSolicitacao status = StatusSolicitacao.PENDENTE;
 
+    // Preenchidos quando um admin aprova ou rejeita. Ficam nulos enquanto PENDENTE.
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "avaliado_por_id", nullable = true)
+    private Usuario avaliadoPor;
+
+    private LocalDateTime avaliadoEm;
+
+    // Motivo da rejeição (obrigatório) ou observação da aprovação (opcional).
+    @Column(length = 500)
+    private String observacao;
+
     // Preenchido automaticamente pelo Hibernate ao inserir; nunca é alterado depois.
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
@@ -73,6 +84,26 @@ public class SolicitacaoTecnico {
 
     public void setStatus(StatusSolicitacao status) {
         this.status = status;
+    }
+
+    public Usuario getAvaliadoPor() {
+        return avaliadoPor;
+    }
+
+    public LocalDateTime getAvaliadoEm() {
+        return avaliadoEm;
+    }
+
+    public String getObservacao() {
+        return observacao;
+    }
+
+    /** Registra a avaliação de uma vez: novo status, quem avaliou, quando e por quê. */
+    public void avaliar(StatusSolicitacao novoStatus, Usuario admin, String observacao) {
+        this.status = novoStatus;
+        this.avaliadoPor = admin;
+        this.avaliadoEm = LocalDateTime.now();
+        this.observacao = observacao;
     }
 
     public LocalDateTime getCreatedAt() {

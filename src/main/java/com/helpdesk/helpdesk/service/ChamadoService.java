@@ -10,16 +10,22 @@ import org.springframework.transaction.annotation.Transactional;
 import com.helpdesk.helpdesk.dto.ChamadoRequest;
 import com.helpdesk.helpdesk.dto.ChamadoResponse;
 import com.helpdesk.helpdesk.dto.ChamadoUpdateRequest;
+import com.helpdesk.helpdesk.dto.ComentarioRequest;
+import com.helpdesk.helpdesk.dto.HistoricoChamadoResponse;
 import com.helpdesk.helpdesk.exception.AcessoNegadoException;
 import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
+import com.helpdesk.helpdesk.models.Categoria;
 import com.helpdesk.helpdesk.models.Chamado;
 import com.helpdesk.helpdesk.models.Departamento;
+import com.helpdesk.helpdesk.models.HistoricoChamado;
 import com.helpdesk.helpdesk.models.Prioridade;
 import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.StatusChamado;
+import com.helpdesk.helpdesk.models.TipoHistorico;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.ChamadoRepository;
+import com.helpdesk.helpdesk.repository.HistoricoChamadoRepository;
 
 /**
  * Regras de negócio de chamado.
@@ -31,7 +37,10 @@ import com.helpdesk.helpdesk.repository.ChamadoRepository;
  *          (reabrir, se o usuário não aceitar a solução)
  *
  * - EM_ANDAMENTO exige um técnico atribuído.
- * - FECHADO é final: o chamado não pode mais ser alterado.
+ * - FECHADO é final: o chamado não pode mais ser alterado nem receber comentários.
+ *
+ * Histórico: abertura, mudanças de status e trocas de técnico são registradas
+ * automaticamente; usuário e técnico também podem comentar.
  */
 @Service
 public class ChamadoService {
@@ -45,13 +54,16 @@ public class ChamadoService {
             StatusChamado.FECHADO, Set.of());
 
     private final ChamadoRepository chamadoRepository;
+    private final HistoricoChamadoRepository historicoRepository;
     private final UsuarioService usuarioService;
     private final DepartamentoService departamentoService;
 
     public ChamadoService(ChamadoRepository chamadoRepository,
+            HistoricoChamadoRepository historicoRepository,
             UsuarioService usuarioService,
             DepartamentoService departamentoService) {
         this.chamadoRepository = chamadoRepository;
+        this.historicoRepository = historicoRepository;
         this.usuarioService = usuarioService;
         this.departamentoService = departamentoService;
     }
@@ -112,19 +124,21 @@ public class ChamadoService {
         Chamado chamado = new Chamado(
                 request.titulo().trim(),
                 request.descricao().trim(),
-                textoOuNulo(request.categoria()),
+                request.categoria(),
                 textoOuNulo(request.numeroPatrimonio()),
                 textoOuNulo(request.equipamento()),
                 usuario,
                 null, // técnico é atribuído depois
                 departamento);
         chamado.setLocal(textoOuNulo(request.local()));
-        chamado.setSetor(textoOuNulo(request.setor()));
+        chamado.setSala(textoOuNulo(request.sala()));
         chamado.setDetalheLocal(textoOuNulo(request.detalheLocal()));
         chamado.setPrioridade(request.prioridade() == null ? Prioridade.MEDIA : request.prioridade());
         // status já nasce ABERTO (valor padrão na entidade)
 
-        return ChamadoResponse.from(chamadoRepository.save(chamado));
+        Chamado salvo = chamadoRepository.save(chamado);
+        registrar(salvo, usuario, TipoHistorico.ABERTURA, "Chamado aberto.");
+        return ChamadoResponse.from(salvo);
     }
 
     /** @param usuarioLogadoId quem está editando: precisa ser o dono, técnico ou admin. */
@@ -136,11 +150,11 @@ public class ChamadoService {
 
         chamado.setTitulo(request.titulo().trim());
         chamado.setDescricao(request.descricao().trim());
-        chamado.setCategoria(textoOuNulo(request.categoria()));
+        chamado.setCategoria(request.categoria() == null ? Categoria.OUTROS : request.categoria());
         chamado.setNumeroPatrimonio(textoOuNulo(request.numeroPatrimonio()));
         chamado.setEquipamento(textoOuNulo(request.equipamento()));
         chamado.setLocal(textoOuNulo(request.local()));
-        chamado.setSetor(textoOuNulo(request.setor()));
+        chamado.setSala(textoOuNulo(request.sala()));
         chamado.setDetalheLocal(textoOuNulo(request.detalheLocal()));
         chamado.setPrioridade(request.prioridade());
         chamado.setDataPrevisaoResolucao(request.dataPrevisaoResolucao());
@@ -150,9 +164,12 @@ public class ChamadoService {
 
     // ---------- Atendimento ----------
 
-    /** Atribui (ou troca) o técnico responsável. */
+    /**
+     * Atribui (ou troca) o técnico responsável.
+     * @param usuarioLogadoId quem está fazendo a ação (vai para o histórico).
+     */
     @Transactional
-    public ChamadoResponse atribuirTecnico(Long id, Long tecnicoId) {
+    public ChamadoResponse atribuirTecnico(Long id, Long tecnicoId, Long usuarioLogadoId) {
         Chamado chamado = buscarEntidade(id);
 
         if (chamado.getStatus() == StatusChamado.RESOLVIDO || chamado.getStatus() == StatusChamado.FECHADO) {
@@ -168,12 +185,22 @@ public class ChamadoService {
             throw new RegraNegocioException("O técnico \"" + tecnico.getName() + "\" está desativado.");
         }
 
+        Usuario anterior = chamado.getTecnico();
+        if (anterior != null && anterior.getId().equals(tecnico.getId())) {
+            throw new RegraNegocioException("\"" + tecnico.getName() + "\" já é o técnico deste chamado.");
+        }
+
         chamado.setTecnico(tecnico);
+        registrar(chamado, usuarioService.buscarEntidade(usuarioLogadoId), TipoHistorico.TECNICO,
+                anterior == null
+                        ? "Técnico atribuído: " + tecnico.getName() + "."
+                        : "Técnico alterado de " + anterior.getName() + " para " + tecnico.getName() + ".");
         return salvarEResponder(chamado);
     }
 
+    /** @param usuarioLogadoId quem está fazendo a ação (vai para o histórico). */
     @Transactional
-    public ChamadoResponse alterarStatus(Long id, StatusChamado novoStatus) {
+    public ChamadoResponse alterarStatus(Long id, StatusChamado novoStatus, Long usuarioLogadoId) {
         if (novoStatus == null) {
             throw new RegraNegocioException("O status é obrigatório.");
         }
@@ -189,7 +216,37 @@ public class ChamadoService {
         }
 
         chamado.setStatus(novoStatus);
+        registrar(chamado, usuarioService.buscarEntidade(usuarioLogadoId), TipoHistorico.STATUS,
+                "Status alterado de " + atual + " para " + novoStatus + ".");
         return salvarEResponder(chamado);
+    }
+
+    // ---------- Histórico ----------
+
+    /** Quem pode ver o chamado pode comentar, desde que ele não esteja FECHADO. */
+    @Transactional
+    public HistoricoChamadoResponse comentar(Long id, ComentarioRequest request, Long usuarioLogadoId) {
+        Chamado chamado = buscarEntidade(id);
+        garantirAcesso(chamado, usuarioLogadoId);
+
+        if (chamado.getStatus() == StatusChamado.FECHADO) {
+            throw new RegraNegocioException("Chamado fechado não aceita novos comentários.");
+        }
+
+        HistoricoChamado comentario = registrar(chamado, usuarioService.buscarEntidade(usuarioLogadoId),
+                TipoHistorico.COMENTARIO, request.mensagem().trim());
+        return HistoricoChamadoResponse.from(comentario);
+    }
+
+    /** Linha do tempo completa do chamado, do mais antigo para o mais novo. */
+    @Transactional(readOnly = true)
+    public List<HistoricoChamadoResponse> listarHistorico(Long id, Long usuarioLogadoId) {
+        Chamado chamado = buscarEntidade(id);
+        garantirAcesso(chamado, usuarioLogadoId);
+
+        return historicoRepository.findByChamadoIdOrderByCreatedAtAscIdAsc(id).stream()
+                .map(HistoricoChamadoResponse::from)
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -199,6 +256,10 @@ public class ChamadoService {
     }
 
     // ---------- Auxiliares ----------
+
+    private HistoricoChamado registrar(Chamado chamado, Usuario autor, TipoHistorico tipo, String mensagem) {
+        return historicoRepository.save(new HistoricoChamado(chamado, autor, tipo, mensagem));
+    }
 
     /**
      * Usuário comum só acessa os chamados que ele mesmo abriu.

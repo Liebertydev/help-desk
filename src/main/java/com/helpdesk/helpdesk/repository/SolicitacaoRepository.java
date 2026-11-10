@@ -10,14 +10,14 @@ import com.helpdesk.helpdesk.models.StatusSolicitacao;
 
 public interface SolicitacaoRepository extends JpaRepository<SolicitacaoTecnico, Long> {
 
-    // @EntityGraph: traz o usuário na mesma consulta (evita N+1, igual ao ChamadoRepository).
-    @EntityGraph(attributePaths = "usuario")
+    // @EntityGraph: traz o usuário e o admin avaliador na mesma consulta (evita N+1).
+    @EntityGraph(attributePaths = { "usuario", "avaliadoPor" })
     List<SolicitacaoTecnico> findAllByOrderByCreatedAtDesc();
 
-    @EntityGraph(attributePaths = "usuario")
+    @EntityGraph(attributePaths = { "usuario", "avaliadoPor" })
     List<SolicitacaoTecnico> findByStatusOrderByCreatedAtDesc(StatusSolicitacao status);
 
-    @EntityGraph(attributePaths = "usuario")
+    @EntityGraph(attributePaths = { "usuario", "avaliadoPor" })
     List<SolicitacaoTecnico> findByUsuarioIdOrderByCreatedAtDesc(Long usuarioId);
 
     // O usuário já tem uma solicitação aguardando avaliação?
