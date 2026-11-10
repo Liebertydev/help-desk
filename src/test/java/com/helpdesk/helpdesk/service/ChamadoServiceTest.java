@@ -60,6 +60,7 @@ class ChamadoServiceTest {
     private Departamento rh;
     private Usuario joao;
     private Usuario tecnico;
+    private Usuario admin;
 
     @BeforeEach
     void setUp() {
@@ -68,10 +69,13 @@ class ChamadoServiceTest {
 
         joao = usuario(10L, "João", Role.USER);
         tecnico = usuario(20L, "Carlos", Role.TECHNICIAN);
+        admin = usuario(99L, "Admin", Role.ADMIN);
 
-        // lenient: nem todo teste usa o técnico como usuário logado,
-        // e o Mockito não deve reclamar desse stub quando ele sobrar.
+        // lenient: nem todo teste usa esses usuários como logados,
+        // e o Mockito não deve reclamar desses stubs quando eles sobrarem.
+        lenient().when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
         lenient().when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
+        lenient().when(usuarioService.buscarEntidade(99L)).thenReturn(admin);
     }
 
     // ---------- abrir ----------
@@ -109,7 +113,7 @@ class ChamadoServiceTest {
         when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
 
-        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 10L, 20L))
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 10L, 99L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("não é um técnico");
     }
@@ -132,7 +136,7 @@ class ChamadoServiceTest {
         Chamado chamado = chamado(StatusChamado.ABERTO, null);
         when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
 
-        assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 20L))
+        assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 99L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("técnico");
     }
@@ -343,9 +347,8 @@ class ChamadoServiceTest {
         Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
         when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(21L)).thenReturn(mariana);
-        when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
 
-        chamadoService.atribuirTecnico(1L, 21L, 20L);
+        chamadoService.atribuirTecnico(1L, 21L, 99L);
 
         assertThat(historicoSalvo().getMensagem()).isEqualTo("Técnico alterado de Carlos para Mariana.");
     }
@@ -356,7 +359,7 @@ class ChamadoServiceTest {
         when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
 
-        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 20L, 20L))
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 20L, 99L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("já é o técnico");
     }
@@ -471,6 +474,73 @@ class ChamadoServiceTest {
 
         assertThat(resposta.titulo()).isEqualTo("Título editado");
         assertThat(resposta.dataPrevisaoResolucao()).isEqualTo(anteontem);
+    }
+
+    // ---------- só o técnico atribuído (ou admin) mexe no chamado ----------
+
+    @Test
+    void alterarStatus_outroTecnicoNaoPodeMudar() {
+        Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(21L)).thenReturn(mariana);
+
+        assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.RESOLVIDO, 21L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("técnico atribuído");
+
+        assertThat(chamado.getStatus()).isEqualTo(StatusChamado.EM_ANDAMENTO);
+    }
+
+    @Test
+    void alterarStatus_adminPodeMudarChamadoDeQualquerTecnico() {
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+
+        ChamadoResponse resposta = chamadoService.alterarStatus(1L, StatusChamado.RESOLVIDO, 99L);
+
+        assertThat(resposta.status()).isEqualTo(StatusChamado.RESOLVIDO);
+    }
+
+    @Test
+    void atualizar_outroTecnicoNaoPodeEditar() {
+        Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(21L)).thenReturn(mariana);
+
+        assertThatThrownBy(() -> chamadoService.atualizar(1L, edicao(chamado.getPrioridade(), null), 21L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("técnico atribuído");
+
+        assertThat(chamado.getTitulo()).isEqualTo("Título");
+    }
+
+    @Test
+    void atribuirTecnico_tecnicoNaoPodeAssumirChamadoDeOutro() {
+        Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(21L)).thenReturn(mariana);
+
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 21L, 21L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("já tem técnico");
+
+        assertThat(chamado.getTecnico()).isEqualTo(tecnico);
+    }
+
+    @Test
+    void atribuirTecnico_tecnicoNaoPodeAtribuirOutroTecnico() {
+        Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 21L, 20L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("assumir chamados para si");
+
+        assertThat(chamado.getTecnico()).isNull();
     }
 
     // ---------- auxiliares ----------
