@@ -1,7 +1,9 @@
 package com.helpdesk.helpdesk.service;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.springframework.stereotype.Service;
@@ -150,6 +152,20 @@ public class ChamadoService {
         garantirAcesso(chamado, usuarioLogadoId);
         garantirQueNaoEstaFechado(chamado);
 
+        boolean mudouPrioridade = request.prioridade() != chamado.getPrioridade();
+        boolean mudouPrevisao = !Objects.equals(request.dataPrevisaoResolucao(), chamado.getDataPrevisaoResolucao());
+
+        // Prioridade e previsão são decisões do atendimento: o dono pode editar
+        // o resto do chamado, mas não pode, por exemplo, marcar o próprio chamado como URGENTE.
+        if ((mudouPrioridade || mudouPrevisao) && !ehEquipe(usuarioService.buscarEntidade(usuarioLogadoId))) {
+            throw new AcessoNegadoException(
+                    "Só técnicos e administradores podem alterar a prioridade e a previsão de resolução.");
+        }
+        if (mudouPrevisao && request.dataPrevisaoResolucao() != null
+                && request.dataPrevisaoResolucao().isBefore(LocalDate.now())) {
+            throw new RegraNegocioException("A previsão de resolução não pode estar no passado.");
+        }
+
         chamado.setTitulo(request.titulo().trim());
         chamado.setDescricao(request.descricao().trim());
         chamado.setCategoria(request.categoria() == null ? Categoria.OUTROS : request.categoria());
@@ -275,8 +291,7 @@ public class ChamadoService {
             return;
         }
 
-        Role role = usuarioService.buscarEntidade(usuarioLogadoId).getRole();
-        if (role != Role.TECHNICIAN && role != Role.ADMIN) {
+        if (!ehEquipe(usuarioService.buscarEntidade(usuarioLogadoId))) {
             throw new AcessoNegadoException("Você só pode acessar os chamados que abriu.");
         }
     }
@@ -288,7 +303,7 @@ public class ChamadoService {
      * que são exatamente "aceitar a solução" e "reabrir".
      */
     private void garantirPermissaoDeStatus(Chamado chamado, Usuario autor) {
-        if (autor.getRole() == Role.TECHNICIAN || autor.getRole() == Role.ADMIN) {
+        if (ehEquipe(autor)) {
             return;
         }
         if (!chamado.getUsuario().getId().equals(autor.getId())) {
@@ -298,6 +313,11 @@ public class ChamadoService {
             throw new AcessoNegadoException(
                     "Você só pode fechar ou reabrir o chamado depois que o técnico marcá-lo como RESOLVIDO.");
         }
+    }
+
+    // "Equipe de atendimento": técnicos e admins.
+    private boolean ehEquipe(Usuario usuario) {
+        return usuario.getRole() == Role.TECHNICIAN || usuario.getRole() == Role.ADMIN;
     }
 
     private void garantirQueNaoEstaFechado(Chamado chamado) {
