@@ -2,9 +2,14 @@ package com.helpdesk.helpdesk.models;
 
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -20,34 +25,48 @@ public class Usuario {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String name;
 
+    // unique = true: o banco recusa dois usuários com o mesmo e-mail (o mesmo vale para CPF e matrícula).
+    @Column(nullable = false, unique = true)
     private String email;
 
+    @Column(nullable = false)
     private String password;
 
+    @Column(nullable = false)
     private boolean ativo = true;
 
+    @Column(unique = true)
     private String cpf;
 
+    @Column(unique = true)
     private String matricula;
 
     private String ocupacao;
 
-    private LocalDateTime createdAt = LocalDateTime.now();
+    // Preenchido automaticamente pelo Hibernate ao inserir; nunca é alterado depois.
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    // Atualizado automaticamente pelo Hibernate a cada alteração do registro.
+    @UpdateTimestamp
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "departamento_id", nullable = false)
     private Departamento departamento;
 
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private Role role = Role.USER;
 
     public Usuario() {
     }
-    
+
     // O construtor abaixo possui parâmetros para inicializar os campos obrigatórios do usuário, como nome, email, senha, ocupação e departamento.
     //  Além disso, ele define o usuário como ativo e atribui a função padrão de USER.
     public Usuario(
@@ -151,15 +170,7 @@ public class Usuario {
         return createdAt;
     }
 
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
     }
 }
