@@ -8,6 +8,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -370,7 +371,87 @@ class ChamadoServiceTest {
                 .isInstanceOf(AcessoNegadoException.class);
     }
 
+    // ---------- atualizar: prioridade e previsão ----------
+
+    @Test
+    void atualizar_donoPodeEditarMantendoPrioridadeEPrevisao() {
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        chamado.setPrioridade(Prioridade.MEDIA);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+
+        ChamadoResponse resposta = chamadoService.atualizar(1L, edicao(Prioridade.MEDIA, null), 10L);
+
+        assertThat(resposta.titulo()).isEqualTo("Título editado");
+    }
+
+    @Test
+    void atualizar_donoNaoPodeMudarPrioridade() {
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        chamado.setPrioridade(Prioridade.MEDIA);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        assertThatThrownBy(() -> chamadoService.atualizar(1L, edicao(Prioridade.URGENTE, null), 10L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("prioridade");
+
+        assertThat(chamado.getPrioridade()).isEqualTo(Prioridade.MEDIA);
+        assertThat(chamado.getTitulo()).isEqualTo("Título");
+    }
+
+    @Test
+    void atualizar_donoNaoPodeMudarPrevisao() {
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        assertThatThrownBy(() -> chamadoService.atualizar(1L,
+                edicao(chamado.getPrioridade(), LocalDate.now().plusDays(1)), 10L))
+                .isInstanceOf(AcessoNegadoException.class);
+    }
+
+    @Test
+    void atualizar_tecnicoPodeMudarPrioridadeEPrevisao() {
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        LocalDate amanha = LocalDate.now().plusDays(1);
+
+        ChamadoResponse resposta = chamadoService.atualizar(1L, edicao(Prioridade.URGENTE, amanha), 20L);
+
+        assertThat(resposta.prioridade()).isEqualTo(Prioridade.URGENTE);
+        assertThat(resposta.dataPrevisaoResolucao()).isEqualTo(amanha);
+    }
+
+    @Test
+    void atualizar_naoAceitaNovaPrevisaoNoPassado() {
+        Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+
+        assertThatThrownBy(() -> chamadoService.atualizar(1L,
+                edicao(chamado.getPrioridade(), LocalDate.now().minusDays(1)), 20L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("passado");
+    }
+
+    @Test
+    void atualizar_aceitaManterPrevisaoQueJaPassou() {
+        LocalDate anteontem = LocalDate.now().minusDays(2);
+        Chamado chamado = chamado(StatusChamado.RESOLVIDO, tecnico);
+        chamado.setDataPrevisaoResolucao(anteontem);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+
+        ChamadoResponse resposta = chamadoService.atualizar(1L, edicao(chamado.getPrioridade(), anteontem), 10L);
+
+        assertThat(resposta.titulo()).isEqualTo("Título editado");
+        assertThat(resposta.dataPrevisaoResolucao()).isEqualTo(anteontem);
+    }
+
     // ---------- auxiliares ----------
+
+    private ChamadoUpdateRequest edicao(Prioridade prioridade, LocalDate previsao) {
+        return new ChamadoUpdateRequest("Título editado", "Descrição", null, null, null, null, null, null,
+                prioridade, previsao);
+    }
 
     private HistoricoChamado historicoSalvo() {
         ArgumentCaptor<HistoricoChamado> captor = ArgumentCaptor.forClass(HistoricoChamado.class);

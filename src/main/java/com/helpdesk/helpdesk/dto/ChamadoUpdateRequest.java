@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import com.helpdesk.helpdesk.models.Categoria;
 import com.helpdesk.helpdesk.models.Prioridade;
 
-import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -13,6 +12,8 @@ import jakarta.validation.constraints.Size;
 /**
  * Dados editáveis de um chamado.
  * Status e técnico ficam de fora: cada um tem sua própria operação no service.
+ * Prioridade e previsão de resolução só podem ser ALTERADAS por técnicos e admins;
+ * o dono do chamado deve reenviar os valores atuais.
  */
 public record ChamadoUpdateRequest(
 
@@ -44,6 +45,7 @@ public record ChamadoUpdateRequest(
         @NotNull(message = "A prioridade é obrigatória.")
         Prioridade prioridade,
 
-        @FutureOrPresent(message = "A previsão de resolução não pode estar no passado.")
+        // Sem @FutureOrPresent aqui: uma previsão antiga que só está sendo MANTIDA
+        // é válida. O service recusa data no passado apenas quando ela muda.
         LocalDate dataPrevisaoResolucao) {
 }
