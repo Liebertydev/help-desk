@@ -23,6 +23,8 @@ import jakarta.servlet.http.HttpServletRequest;
  * numa resposta HTTP com o status certo e uma mensagem em JSON.
  * Assim os controllers não precisam de try/catch.
  *
+ *   NaoAutenticadoException              → 401 Unauthorized
+ *   AcessoNegadoException                → 403 Forbidden
  *   RecursoNaoEncontradoException        → 404 Not Found
  *   RegraNegocioException                → 409 Conflict
  *   Validação dos DTOs (@Valid)          → 400 Bad Request (com os campos)
@@ -34,6 +36,16 @@ import jakarta.servlet.http.HttpServletRequest;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(NaoAutenticadoException.class)
+    public ResponseEntity<ErroResponse> naoAutenticado(NaoAutenticadoException ex, HttpServletRequest request) {
+        return resposta(HttpStatus.UNAUTHORIZED, ex.getMessage(), request, null);
+    }
+
+    @ExceptionHandler(AcessoNegadoException.class)
+    public ResponseEntity<ErroResponse> acessoNegado(AcessoNegadoException ex, HttpServletRequest request) {
+        return resposta(HttpStatus.FORBIDDEN, ex.getMessage(), request, null);
+    }
 
     @ExceptionHandler(RecursoNaoEncontradoException.class)
     public ResponseEntity<ErroResponse> naoEncontrado(RecursoNaoEncontradoException ex, HttpServletRequest request) {

@@ -87,9 +87,10 @@ public class ChamadoService {
 
     // ---------- Abertura e edição ----------
 
+    /** @param usuarioId quem está abrindo (o usuário logado). */
     @Transactional
-    public ChamadoResponse abrir(ChamadoRequest request) {
-        Usuario usuario = usuarioService.buscarEntidade(request.usuarioId());
+    public ChamadoResponse abrir(ChamadoRequest request, Long usuarioId) {
+        Usuario usuario = usuarioService.buscarEntidade(usuarioId);
 
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("Usuário desativado não pode abrir chamados.");

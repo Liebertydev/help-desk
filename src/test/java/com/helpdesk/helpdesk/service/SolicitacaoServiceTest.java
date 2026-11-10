@@ -16,7 +16,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoRequest;
 import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoResponse;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
@@ -53,7 +52,7 @@ class SolicitacaoServiceTest {
         when(usuarioService.buscarEntidade(10L)).thenReturn(pedro);
         when(solicitacaoRepository.save(any(SolicitacaoTecnico.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SolicitacaoTecnicoResponse resposta = solicitacaoService.solicitar(new SolicitacaoTecnicoRequest(10L));
+        SolicitacaoTecnicoResponse resposta = solicitacaoService.solicitar(10L);
 
         assertThat(resposta.status()).isEqualTo(StatusSolicitacao.PENDENTE);
         assertThat(resposta.usuarioNome()).isEqualTo("Pedro");
@@ -64,7 +63,7 @@ class SolicitacaoServiceTest {
         pedro.setRole(Role.TECHNICIAN);
         when(usuarioService.buscarEntidade(10L)).thenReturn(pedro);
 
-        assertThatThrownBy(() -> solicitacaoService.solicitar(new SolicitacaoTecnicoRequest(10L)))
+        assertThatThrownBy(() -> solicitacaoService.solicitar(10L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("usuários comuns");
 
@@ -76,7 +75,7 @@ class SolicitacaoServiceTest {
         when(usuarioService.buscarEntidade(10L)).thenReturn(pedro);
         when(solicitacaoRepository.existsByUsuarioIdAndStatus(10L, StatusSolicitacao.PENDENTE)).thenReturn(true);
 
-        assertThatThrownBy(() -> solicitacaoService.solicitar(new SolicitacaoTecnicoRequest(10L)))
+        assertThatThrownBy(() -> solicitacaoService.solicitar(10L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("pendente");
     }
