@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -36,23 +37,25 @@ public class DataSeeder implements CommandLineRunner {
 
     private static final Logger log = LoggerFactory.getLogger(DataSeeder.class);
 
-    // TODO: quando o service de usuário tiver criptografia (BCrypt),
-    // usar o PasswordEncoder aqui em vez de gravar a senha em texto puro.
+    // Senha de todos os usuários de teste. É gravada criptografada com BCrypt.
     private static final String SENHA_PADRAO = "123456";
 
     private final DepartamentoRepository departamentoRepository;
     private final UsuarioRepository usuarioRepository;
     private final ChamadoRepository chamadoRepository;
     private final SolicitacaoRepository solicitacaoRepository;
+    private final PasswordEncoder passwordEncoder;
 
     public DataSeeder(DepartamentoRepository departamentoRepository,
             UsuarioRepository usuarioRepository,
             ChamadoRepository chamadoRepository,
-            SolicitacaoRepository solicitacaoRepository) {
+            SolicitacaoRepository solicitacaoRepository,
+            PasswordEncoder passwordEncoder) {
         this.departamentoRepository = departamentoRepository;
         this.usuarioRepository = usuarioRepository;
         this.chamadoRepository = chamadoRepository;
         this.solicitacaoRepository = solicitacaoRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     @Override
@@ -71,22 +74,22 @@ public class DataSeeder implements CommandLineRunner {
 
         // ---------- Usuários (um de cada Role, mais alguns comuns) ----------
         Usuario admin = criarUsuario("Administrador", "admin@helpdesk.com", "Coordenador de TI",
-                ti, Role.ADMIN, "000.000.000-01", "ADM001");
+                ti, Role.ADMIN, "00000000001", "ADM001");
 
         Usuario tecnicoCarlos = criarUsuario("Carlos Souza", "carlos.tecnico@helpdesk.com", "Técnico de Suporte",
-                ti, Role.TECHNICIAN, "000.000.000-02", "TEC001");
+                ti, Role.TECHNICIAN, "00000000002", "TEC001");
 
         Usuario tecnicaMariana = criarUsuario("Mariana Lima", "mariana.tecnica@helpdesk.com", "Técnica de Redes",
-                ti, Role.TECHNICIAN, "000.000.000-03", "TEC002");
+                ti, Role.TECHNICIAN, "00000000003", "TEC002");
 
         Usuario joao = criarUsuario("João Pereira", "joao@helpdesk.com", "Analista de RH",
-                rh, Role.USER, "000.000.000-04", "USR001");
+                rh, Role.USER, "00000000004", "USR001");
 
         Usuario ana = criarUsuario("Ana Costa", "ana@helpdesk.com", "Analista Financeira",
-                financeiro, Role.USER, "000.000.000-05", "USR002");
+                financeiro, Role.USER, "00000000005", "USR002");
 
         Usuario pedro = criarUsuario("Pedro Alves", "pedro@helpdesk.com", "Assistente Administrativo",
-                administrativo, Role.USER, "000.000.000-06", "USR003");
+                administrativo, Role.USER, "00000000006", "USR003");
 
         // ---------- Chamados (um em cada status) ----------
         Chamado impressora = new Chamado("Impressora não imprime",
@@ -141,7 +144,7 @@ public class DataSeeder implements CommandLineRunner {
 
     private Usuario criarUsuario(String nome, String email, String ocupacao, Departamento departamento,
             Role role, String cpf, String matricula) {
-        Usuario usuario = new Usuario(nome, email, SENHA_PADRAO, ocupacao, departamento);
+        Usuario usuario = new Usuario(nome, email, passwordEncoder.encode(SENHA_PADRAO), ocupacao, departamento);
         usuario.setRole(role);
         usuario.setCpf(cpf);
         usuario.setMatricula(matricula);
