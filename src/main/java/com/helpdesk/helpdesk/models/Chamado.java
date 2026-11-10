@@ -3,6 +3,9 @@ package com.helpdesk.helpdesk.models;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -23,13 +26,18 @@ public class Chamado {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String titulo;
 
+    // TEXT não tem o limite de 255 caracteres do varchar padrão.
+    @Column(nullable = false, columnDefinition = "TEXT")
     private String descricao;
 
     private String categoria;
 
-    private int numeroPatrimonio;
+    // String em vez de int: aceita zeros à esquerda e letras (ex.: "000123", "PAT-45")
+    // e pode ficar nulo quando o chamado não envolve um equipamento.
+    private String numeroPatrimonio;
 
     private String equipamento;
 
@@ -44,8 +52,8 @@ public class Chamado {
     @JoinColumn(name = "tecnico_id", nullable = true)
     private Usuario tecnico;
 
-    @ManyToOne 
-    @JoinColumn (name = "departamento_id", nullable = false)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "departamento_id", nullable = false)
     private Departamento departamento;
 
     private String local;
@@ -67,15 +75,21 @@ public class Chamado {
     @Column(name = "data_previsao_resolucao", nullable = true)
     private LocalDate dataPrevisaoResolucao;
 
-    private LocalDateTime createdAt = LocalDateTime.now();
+    // Preenchido automaticamente pelo Hibernate ao inserir; nunca é alterado depois.
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
 
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    // Atualizado automaticamente pelo Hibernate a cada alteração do registro.
+    @UpdateTimestamp
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
 
     public Chamado() {
     }
 
-    public Chamado(String titulo, String descricao, String categoria, int numeroPatrimonio,
-            String equipamento, Usuario usuario, Usuario tecnico) {
+    public Chamado(String titulo, String descricao, String categoria, String numeroPatrimonio,
+            String equipamento, Usuario usuario, Usuario tecnico, Departamento departamento) {
         this.titulo = titulo;
         this.descricao = descricao;
         this.categoria = categoria;
@@ -83,6 +97,7 @@ public class Chamado {
         this.equipamento = equipamento;
         this.usuario = usuario;
         this.tecnico = tecnico;
+        this.departamento = departamento;
     }
 
     public Long getId() {
@@ -117,11 +132,11 @@ public class Chamado {
         this.categoria = categoria;
     }
 
-    public int getNumeroPatrimonio() {
+    public String getNumeroPatrimonio() {
         return numeroPatrimonio;
     }
 
-    public void setNumeroPatrimonio(int numeroPatrimonio) {
+    public void setNumeroPatrimonio(String numeroPatrimonio) {
         this.numeroPatrimonio = numeroPatrimonio;
     }
 
@@ -209,15 +224,7 @@ public class Chamado {
         return createdAt;
     }
 
-    public void setCreatedAt(LocalDateTime createdAt) {
-        this.createdAt = createdAt;
-    }
-
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
-    }
-
-    public void setUpdatedAt(LocalDateTime updatedAt) {
-        this.updatedAt = updatedAt;
     }
 }
