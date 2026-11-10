@@ -13,6 +13,7 @@ Usuários abrem chamados, técnicos atendem e administradores gerenciam departam
 - [Usuários de teste](#usuários-de-teste)
 - [Autenticação](#autenticação)
 - [Endpoints](#endpoints)
+- [Quem pode fazer o quê](#quem-pode-fazer-o-quê)
 - [Regras de negócio](#regras-de-negócio)
 - [Erros](#erros)
 - [Estrutura do projeto](#estrutura-do-projeto)
@@ -84,6 +85,24 @@ sh mvnw test
 
 Os testes dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
 
+### Atualizando um banco criado antes da categoria fixa e da sala
+
+O Hibernate (`ddl-auto=update`) cria tabelas e colunas novas sozinho, mas **não renomeia colunas nem converte dados**. Se o seu banco foi criado quando o chamado ainda tinha `setor` e categoria em texto livre, escolha uma opção:
+
+- **Recriar os dados de teste:** apague as tabelas (comando na seção [Usuários de teste](#usuários-de-teste)) e suba a aplicação.
+- **Manter os dados:** rode esta migração **antes** de subir a aplicação.
+
+  ```sql
+  BEGIN;
+  ALTER TABLE chamado RENAME COLUMN setor TO sala;
+  UPDATE chamado SET categoria = CASE lower(trim(categoria))
+      WHEN 'hardware' THEN 'HARDWARE' WHEN 'software' THEN 'SOFTWARE'
+      WHEN 'rede' THEN 'REDE' WHEN 'impressora' THEN 'IMPRESSORA'
+      WHEN 'acesso' THEN 'ACESSO' ELSE 'OUTROS' END;
+  ALTER TABLE chamado ALTER COLUMN categoria SET NOT NULL;
+  COMMIT;
+  ```
+
 ---
 
 ## Usuários de teste
@@ -100,12 +119,16 @@ Todos os usuários têm a senha **`123456`**.
 | Ana Costa | `ana@helpdesk.com` | `USER` | Financeiro |
 | Pedro Alves | `pedro@helpdesk.com` | `USER` | Administrativo |
 
-Também são criados 4 departamentos, 4 chamados (um em cada status) e 2 solicitações de técnico (uma pendente, do Pedro, e uma aprovada).
+Também são criados:
+
+- 4 departamentos;
+- 4 chamados, um em cada status, já com **histórico** (abertura, atribuição, mudanças de status e comentários);
+- 2 solicitações de técnico: uma pendente, do Pedro, e uma aprovada pelo admin, da Mariana.
 
 **Para recriar os dados do zero**, apague as tabelas e suba a aplicação de novo:
 
 ```sql
-DROP TABLE chamado, solicitacao_tecnico, users, departamento;
+DROP TABLE historico_chamado, chamado, solicitacao_tecnico, users, departamento;
 ```
 
 O seed só roda no perfil `dev`. Para rodar sem ele, use `SPRING_PROFILES_ACTIVE=prod`.
@@ -141,7 +164,7 @@ O seed só roda no perfil `dev`. Para rodar sem ele, use `SPRING_PROFILES_ACTIVE
 | Situação | Resposta |
 |---|---|
 | Sem token, token inválido ou após o logout | `401 Unauthorized` |
-| Logado, mas o role não tem permissão | `403 Forbidden` |
+| Logado, mas sem permissão para a ação (role ou dono do registro) | `403 Forbidden` |
 
 > ⚠️ Os tokens ficam em memória: **ao reiniciar a API, todos precisam fazer login de novo.**
 > Usuários desativados perdem o acesso na hora, mesmo com um token válido.
@@ -153,6 +176,7 @@ O seed só roda no perfil `dev`. Para rodar sem ele, use `SPRING_PROFILES_ACTIVE
 **Legenda de acesso:** 🌐 público (sem login) · 👤 qualquer usuário logado · 🔧 técnico ou admin · 👑 só admin
 
 Rotas com `/me`, `/meus`, `/minhas` e `/atribuidos` sempre agem sobre **o usuário logado**.
+Algumas rotas têm, além do ícone, uma regra sobre **qual registro** a pessoa pode acessar. Ela aparece na descrição e está detalhada em [Quem pode fazer o quê](#quem-pode-fazer-o-quê).
 
 ### Autenticação — `/api/auth`
 
@@ -179,12 +203,12 @@ Rotas com `/me`, `/meus`, `/minhas` e `/atribuidos` sempre agem sobre **o usuár
 |---|---|---|---|
 | `POST` | `/` | 🌐 | Cadastro. Todo usuário novo nasce `USER` |
 | `GET` | `/` | 🔧 | Lista os usuários (`?role=TECHNICIAN`) |
-| `GET` | `/{id}` | 👤 | Busca por id |
+| `GET` | `/{id}` | 👤 | Busca por id. Usuário comum só vê os próprios dados (CPF, matrícula, e-mail) |
 | `PUT` | `/me` | 👤 | Edita os próprios dados |
 | `PATCH` | `/me/senha` | 👤 | Troca a própria senha. Corpo: `{ senhaAtual, novaSenha }` |
 | `PUT` | `/{id}` | 👑 | Edita os dados de qualquer usuário |
-| `PATCH` | `/{id}/role` | 👑 | Altera o role. Corpo: `{ role }` |
-| `PATCH` | `/{id}/desativar` | 👑 | Desativa |
+| `PATCH` | `/{id}/role` | 👑 | Altera o role. Corpo: `{ role }`. Técnico que deixa de ser `TECHNICIAN` tem os chamados pendentes devolvidos à fila |
+| `PATCH` | `/{id}/desativar` | 👑 | Desativa. Se for técnico, os chamados pendentes dele voltam para a fila |
 | `PATCH` | `/{id}/ativar` | 👑 | Reativa |
 
 <details>
@@ -212,13 +236,17 @@ Rotas com `/me`, `/meus`, `/minhas` e `/atribuidos` sempre agem sobre **o usuár
 | `POST` | `/` | 👤 | Abre um chamado. O solicitante é o usuário logado |
 | `GET` | `/meus` | 👤 | Chamados que o usuário logado abriu |
 | `GET` | `/{id}` | 👤 | Busca por id. Usuário comum só vê os próprios chamados |
-| `PUT` | `/{id}` | 👤 | Edita. Usuário comum só edita os próprios chamados |
+| `PUT` | `/{id}` | 👤 | Edita. Dono e responsável editam; prioridade e previsão, só o responsável |
+| `PATCH` | `/{id}/status` | 👤 | Muda o status. Corpo: `{ status }`. Responsável: fluxo completo. Dono: só fechar ou reabrir depois de `RESOLVIDO` |
+| `GET` | `/{id}/historico` | 👤 | Linha do tempo do chamado (mesma regra de acesso do `GET /{id}`) |
+| `POST` | `/{id}/comentarios` | 👤 | Comenta. Corpo: `{ mensagem }`. Não é aceito em chamados `FECHADO` |
 | `GET` | `/` | 🔧 | Lista todos (`?status=ABERTO`) |
 | `GET` | `/atribuidos` | 🔧 | Fila do técnico logado |
 | `GET` | `/usuario/{usuarioId}` | 🔧 | Chamados abertos por um usuário |
 | `GET` | `/tecnico/{tecnicoId}` | 🔧 | Chamados atribuídos a um técnico |
-| `PATCH` | `/{id}/tecnico` | 🔧 | Atribui ou troca o técnico. Corpo: `{ tecnicoId }` |
-| `PATCH` | `/{id}/status` | 🔧 | Muda o status. Corpo: `{ status }` |
+| `PATCH` | `/{id}/tecnico` | 🔧 | Corpo: `{ tecnicoId }`. Admin atribui ou transfere; técnico só **assume** chamado sem técnico |
+
+> **Responsável** pelo chamado = qualquer admin, ou o técnico atribuído a ele.
 
 <details>
 <summary>Exemplo de abertura</summary>
@@ -227,18 +255,39 @@ Rotas com `/me`, `/meus`, `/minhas` e `/atribuidos` sempre agem sobre **o usuár
 {
   "titulo": "Impressora não imprime",
   "descricao": "Mostra papel atolado, mas não há papel preso.",
-  "categoria": "Hardware",
+  "categoria": "IMPRESSORA",
   "numeroPatrimonio": "PAT-000123",
   "equipamento": "Impressora HP LaserJet",
   "local": "Bloco A",
-  "setor": "Sala 101",
+  "sala": "Sala 101",
   "detalheLocal": "Ao lado da porta",
   "prioridade": "ALTA",
   "departamentoId": 2
 }
 ```
 
-Só `titulo` e `descricao` são obrigatórios. Sem `departamentoId`, o chamado vai para o departamento de quem abriu. Sem `prioridade`, fica `MEDIA`.
+Só `titulo` e `descricao` são obrigatórios. Sem `departamentoId`, o chamado vai para o departamento de quem abriu. Sem `prioridade`, fica `MEDIA`. Sem `categoria`, fica `OUTROS`.
+
+O endereço físico do problema fica em `local` (bloco ou prédio), `sala` e `detalheLocal`. O `departamento` é a área responsável pelo chamado.
+</details>
+
+<details>
+<summary>Exemplo de histórico (<code>GET /api/chamados/{id}/historico</code>)</summary>
+
+```json
+[
+  { "id": 1, "tipo": "ABERTURA",   "mensagem": "Chamado aberto.",
+    "autorId": 4, "autorNome": "João Pereira", "autorRole": "USER", "createdAt": "2026-11-10T18:40:01" },
+  { "id": 2, "tipo": "TECNICO",    "mensagem": "Técnico atribuído: Carlos Souza.",
+    "autorId": 1, "autorNome": "Administrador", "autorRole": "ADMIN", "createdAt": "2026-11-10T18:41:10" },
+  { "id": 3, "tipo": "STATUS",     "mensagem": "Status alterado de ABERTO para EM_ANDAMENTO.",
+    "autorId": 2, "autorNome": "Carlos Souza", "autorRole": "TECHNICIAN", "createdAt": "2026-11-10T18:42:30" },
+  { "id": 4, "tipo": "COMENTARIO", "mensagem": "Resetei sua senha, tente agora.",
+    "autorId": 2, "autorNome": "Carlos Souza", "autorRole": "TECHNICIAN", "createdAt": "2026-11-10T18:43:05" }
+]
+```
+
+Os eventos `ABERTURA`, `STATUS` e `TECNICO` são registrados **automaticamente**. `COMENTARIO` vem do `POST /{id}/comentarios`. O histórico nunca é editado nem apagado.
 </details>
 
 ### Solicitações de técnico — `/api/solicitacoes`
@@ -250,8 +299,34 @@ Só `titulo` e `descricao` são obrigatórios. Sem `departamentoId`, o chamado v
 | `GET` | `/` | 👑 | Lista todas (`?status=PENDENTE`) |
 | `GET` | `/usuario/{usuarioId}` | 👑 | Solicitações de um usuário |
 | `GET` | `/{id}` | 👑 | Busca por id |
-| `PATCH` | `/{id}/aprovar` | 👑 | Aprova e promove o usuário a `TECHNICIAN` |
-| `PATCH` | `/{id}/rejeitar` | 👑 | Rejeita |
+| `PATCH` | `/{id}/aprovar` | 👑 | Aprova e promove o usuário a `TECHNICIAN`. Corpo **opcional**: `{ observacao }` |
+| `PATCH` | `/{id}/rejeitar` | 👑 | Rejeita. Corpo **obrigatório**: `{ motivo }` |
+
+A resposta traz quem avaliou e quando (`avaliadoPorId`, `avaliadoPorNome`, `avaliadoEm`) e a `observacao` (o motivo, no caso de rejeição).
+
+---
+
+## Quem pode fazer o quê
+
+### No chamado
+
+| Ação | Admin | Técnico atribuído | Outro técnico | Dono (`USER`) | Outro `USER` |
+|---|---|---|---|---|---|
+| Ver e ver o histórico | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Comentar (se não estiver `FECHADO`) | ✅ | ✅ | ✅ | ✅ | ❌ |
+| Editar título, descrição, local etc. | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Alterar prioridade e previsão | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Mudar status | ✅ | ✅ | ❌ | só de `RESOLVIDO` para `FECHADO` ou `EM_ANDAMENTO` | ❌ |
+| Atribuir técnico | ✅ qualquer um, inclusive transferir | ❌ | só assumir para si, se estiver sem técnico | ❌ | ❌ |
+
+### Nos usuários
+
+| Ação | Admin | Técnico | `USER` |
+|---|---|---|---|
+| Ver dados de outro usuário (`GET /{id}`) | ✅ | ✅ | ❌ (só os próprios) |
+| Listar usuários | ✅ | ✅ | ❌ |
+| Editar os próprios dados e a senha (`/me`) | ✅ | ✅ | ✅ |
+| Editar outro usuário, alterar role, ativar e desativar | ✅ | ❌ | ❌ |
 
 ---
 
@@ -264,6 +339,8 @@ Só `titulo` e `descricao` são obrigatórios. Sem `departamentoId`, o chamado v
 | `Role` | `USER`, `TECHNICIAN`, `ADMIN` |
 | `StatusChamado` | `ABERTO`, `EM_ANDAMENTO`, `RESOLVIDO`, `FECHADO` |
 | `Prioridade` | `BAIXA`, `MEDIA`, `ALTA`, `URGENTE` |
+| `Categoria` | `HARDWARE`, `SOFTWARE`, `REDE`, `IMPRESSORA`, `ACESSO`, `OUTROS` |
+| `TipoHistorico` | `ABERTURA`, `COMENTARIO`, `STATUS`, `TECNICO` |
 | `StatusSolicitacao` | `PENDENTE`, `APROVADA`, `REJEITADA` |
 
 ### Fluxo do chamado
@@ -275,13 +352,24 @@ ABERTO → EM_ANDAMENTO → RESOLVIDO → FECHADO
 ```
 
 - Só é possível ir para `EM_ANDAMENTO` com um técnico atribuído.
-- Só usuários `TECHNICIAN` ativos podem ser atribuídos.
-- O técnico não pode ser trocado em chamados `RESOLVIDO` ou `FECHADO`.
-- `FECHADO` é final: o chamado não muda mais de status e não pode ser editado, **nem pelo admin**.
+- Depois que o técnico marca `RESOLVIDO`, **o dono do chamado** decide: aceita a solução (`FECHADO`) ou reabre (`EM_ANDAMENTO`). O responsável também pode fazer isso.
+- Só usuários `TECHNICIAN` ativos podem ser atribuídos, e o técnico não pode ser trocado em chamados `RESOLVIDO` ou `FECHADO`.
+- `FECHADO` é final: o chamado não muda mais de status, não pode ser editado e não aceita comentários, **nem do admin**.
+- A previsão de resolução não pode ser **alterada** para uma data no passado. Uma previsão antiga que só está sendo mantida na edição é aceita.
+
+### Técnico que deixa de atender
+
+Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive quando é promovido a `ADMIN`:
+
+- os chamados `ABERTO` e `EM_ANDAMENTO` dele ficam **sem técnico** e voltam para a fila;
+- os `EM_ANDAMENTO` voltam para `ABERTO`;
+- os `RESOLVIDO` e `FECHADO` mantêm o técnico, como registro de quem resolveu. Se um desses for reaberto, volta para `ABERTO`, sem técnico;
+- tudo fica registrado no histórico de cada chamado.
 
 ### Usuários e departamentos
 
 - E-mail, CPF e matrícula são únicos.
+- O sistema sempre precisa ter **pelo menos um admin ativo**: não é possível rebaixar nem desativar o último.
 - Não é possível cadastrar usuários nem abrir chamados em departamentos desativados.
 - Usuários e departamentos nunca são apagados, só **desativados**, porque chamados antigos continuam ligados a eles.
 - Senhas são guardadas com **BCrypt** e nunca aparecem nas respostas da API.
@@ -290,6 +378,7 @@ ABERTO → EM_ANDAMENTO → RESOLVIDO → FECHADO
 
 - Só um usuário `USER` ativo pode solicitar, e apenas uma solicitação `PENDENTE` por vez.
 - Solicitações já aprovadas ou rejeitadas não podem ser avaliadas de novo.
+- A rejeição exige um **motivo**. Toda avaliação registra o admin que avaliou e quando.
 - Depois de uma rejeição, o usuário pode solicitar outra vez.
 
 ---
@@ -325,9 +414,11 @@ Em erros de validação, o campo `campos` traz a mensagem de cada campo inválid
 |---|---|
 | `400 Bad Request` | Campos inválidos, JSON malformado, enum ou id inválido |
 | `401 Unauthorized` | Sem login, token inválido ou credenciais erradas |
-| `403 Forbidden` | Sem permissão para a ação |
-| `404 Not Found` | Registro não encontrado |
-| `409 Conflict` | Regra de negócio violada (dado duplicado, transição de status inválida etc.) |
+| `403 Forbidden` | Sem permissão para a ação (veja [Quem pode fazer o quê](#quem-pode-fazer-o-quê)) |
+| `404 Not Found` | Registro ou rota não encontrados |
+| `405 Method Not Allowed` | Método HTTP não suportado na rota (ex.: `DELETE` onde só existe `GET`) |
+| `409 Conflict` | Regra de negócio violada (dado duplicado, transição de status inválida, último admin etc.) |
+| `415 Unsupported Media Type` | Corpo enviado sem `Content-Type: application/json` |
 | `500 Internal Server Error` | Erro inesperado (o detalhe fica no log do servidor) |
 
 ---
