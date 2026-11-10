@@ -1,0 +1,125 @@
+package com.helpdesk.helpdesk.service;
+
+import java.util.List;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoRequest;
+import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoResponse;
+import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
+import com.helpdesk.helpdesk.exception.RegraNegocioException;
+import com.helpdesk.helpdesk.models.Role;
+import com.helpdesk.helpdesk.models.SolicitacaoTecnico;
+import com.helpdesk.helpdesk.models.StatusSolicitacao;
+import com.helpdesk.helpdesk.models.Usuario;
+import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
+
+/**
+ * Solicitações de usuários para virar técnico.
+ *
+ * Fluxo: PENDENTE → APROVADA (o usuário vira TECHNICIAN)
+ *                 → REJEITADA (o usuário pode pedir de novo depois)
+ *
+ * Aprovar e rejeitar são ações de ADMIN (a checagem entra junto com o login).
+ */
+@Service
+public class SolicitacaoService {
+
+    private final SolicitacaoRepository solicitacaoRepository;
+    private final UsuarioService usuarioService;
+
+    public SolicitacaoService(SolicitacaoRepository solicitacaoRepository, UsuarioService usuarioService) {
+        this.solicitacaoRepository = solicitacaoRepository;
+        this.usuarioService = usuarioService;
+    }
+
+    // ---------- Consultas ----------
+
+    @Transactional(readOnly = true)
+    public List<SolicitacaoTecnicoResponse> listar(StatusSolicitacao status) {
+        List<SolicitacaoTecnico> solicitacoes = status == null
+                ? solicitacaoRepository.findAllByOrderByCreatedAtDesc()
+                : solicitacaoRepository.findByStatusOrderByCreatedAtDesc(status);
+
+        return paraResponse(solicitacoes);
+    }
+
+    @Transactional(readOnly = true)
+    public List<SolicitacaoTecnicoResponse> listarPorUsuario(Long usuarioId) {
+        usuarioService.buscarEntidade(usuarioId); // 404 se o usuário não existir
+        return paraResponse(solicitacaoRepository.findByUsuarioIdOrderByCreatedAtDesc(usuarioId));
+    }
+
+    @Transactional(readOnly = true)
+    public SolicitacaoTecnicoResponse buscarPorId(Long id) {
+        return SolicitacaoTecnicoResponse.from(buscarEntidade(id));
+    }
+
+    // ---------- Ações ----------
+
+    @Transactional
+    public SolicitacaoTecnicoResponse solicitar(SolicitacaoTecnicoRequest request) {
+        Usuario usuario = usuarioService.buscarEntidade(request.usuarioId());
+
+        if (!usuario.isAtivo()) {
+            throw new RegraNegocioException("Usuário desativado não pode fazer solicitações.");
+        }
+        // Só USER pode pedir: técnico já é técnico, e admin já tem mais permissões.
+        if (usuario.getRole() != Role.USER) {
+            throw new RegraNegocioException("Apenas usuários comuns podem solicitar acesso de técnico.");
+        }
+        if (solicitacaoRepository.existsByUsuarioIdAndStatus(usuario.getId(), StatusSolicitacao.PENDENTE)) {
+            throw new RegraNegocioException("Já existe uma solicitação pendente para este usuário.");
+        }
+
+        SolicitacaoTecnico salva = solicitacaoRepository.save(new SolicitacaoTecnico(usuario));
+        return SolicitacaoTecnicoResponse.from(salva);
+    }
+
+    /**
+     * Aprova e promove o usuário a TECHNICIAN.
+     * As duas mudanças estão na mesma transação: se a promoção falhar
+     * (ex.: usuário desativado), a solicitação também NÃO fica aprovada.
+     */
+    @Transactional
+    public SolicitacaoTecnicoResponse aprovar(Long id) {
+        SolicitacaoTecnico solicitacao = buscarPendente(id);
+
+        usuarioService.alterarRole(solicitacao.getUsuario().getId(), Role.TECHNICIAN);
+        solicitacao.setStatus(StatusSolicitacao.APROVADA);
+
+        return SolicitacaoTecnicoResponse.from(solicitacao);
+    }
+
+    @Transactional
+    public SolicitacaoTecnicoResponse rejeitar(Long id) {
+        SolicitacaoTecnico solicitacao = buscarPendente(id);
+
+        solicitacao.setStatus(StatusSolicitacao.REJEITADA);
+
+        return SolicitacaoTecnicoResponse.from(solicitacao);
+    }
+
+    // ---------- Auxiliares ----------
+
+    private SolicitacaoTecnico buscarPendente(Long id) {
+        SolicitacaoTecnico solicitacao = buscarEntidade(id);
+
+        if (solicitacao.getStatus() != StatusSolicitacao.PENDENTE) {
+            throw new RegraNegocioException("Esta solicitação já foi " + solicitacao.getStatus() + ".");
+        }
+        return solicitacao;
+    }
+
+    private SolicitacaoTecnico buscarEntidade(Long id) {
+        return solicitacaoRepository.findById(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação", id));
+    }
+
+    private List<SolicitacaoTecnicoResponse> paraResponse(List<SolicitacaoTecnico> solicitacoes) {
+        return solicitacoes.stream()
+                .map(SolicitacaoTecnicoResponse::from)
+                .toList();
+    }
+}
