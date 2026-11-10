@@ -73,9 +73,12 @@ public class ChamadoController {
         return chamadoService.listarPorTecnico(tecnicoId);
     }
 
+    // Usuário comum só vê os chamados que abriu; técnico e admin veem todos (regra no service).
     @GetMapping("/{id}")
-    public ChamadoResponse buscarPorId(@PathVariable Long id) {
-        return chamadoService.buscarPorId(id);
+    public ChamadoResponse buscarPorId(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id) {
+        return chamadoService.buscarPorId(id, usuarioLogadoId);
     }
 
     // Qualquer usuário logado abre chamado; o solicitante é ele mesmo.
@@ -87,9 +90,13 @@ public class ChamadoController {
         return ResponseEntity.created(URI.create("/api/chamados/" + criado.id())).body(criado);
     }
 
+    // Mesma regra: só o dono, técnico ou admin edita.
     @PutMapping("/{id}")
-    public ChamadoResponse atualizar(@PathVariable Long id, @RequestBody @Valid ChamadoUpdateRequest request) {
-        return chamadoService.atualizar(id, request);
+    public ChamadoResponse atualizar(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody @Valid ChamadoUpdateRequest request) {
+        return chamadoService.atualizar(id, request, usuarioLogadoId);
     }
 
     // Body: { "tecnicoId": 2 }
