@@ -158,6 +158,9 @@ public class UsuarioService {
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("Não é possível alterar o role de um usuário desativado.");
         }
+        if (usuario.getRole() == Role.ADMIN) {
+            garantirQueNaoEOUltimoAdmin("rebaixar");
+        }
 
         usuario.setRole(novoRole);
         return UsuarioResponse.from(usuario);
@@ -170,6 +173,9 @@ public class UsuarioService {
 
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("O usuário já está desativado.");
+        }
+        if (usuario.getRole() == Role.ADMIN) {
+            garantirQueNaoEOUltimoAdmin("desativar");
         }
 
         usuario.setAtivo(false);
@@ -194,6 +200,16 @@ public class UsuarioService {
     }
 
     // ---------- Auxiliares ----------
+
+    /**
+     * O sistema precisa ter sempre pelo menos um ADMIN ativo: sem ele,
+     * ninguém mais conseguiria promover usuários nem aprovar solicitações.
+     */
+    private void garantirQueNaoEOUltimoAdmin(String acao) {
+        if (usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN) <= 1) {
+            throw new RegraNegocioException("Não é possível " + acao + " o último administrador ativo do sistema.");
+        }
+    }
 
     private Departamento buscarDepartamentoAtivo(Long departamentoId) {
         Departamento departamento = departamentoService.buscarEntidade(departamentoId);

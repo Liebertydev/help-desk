@@ -10,6 +10,10 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -29,6 +33,9 @@ import jakarta.servlet.http.HttpServletRequest;
  *   RegraNegocioException                → 409 Conflict
  *   Validação dos DTOs (@Valid)          → 400 Bad Request (com os campos)
  *   JSON inválido / tipo errado na URL   → 400 Bad Request
+ *   Rota inexistente                     → 404 Not Found
+ *   Método HTTP não suportado            → 405 Method Not Allowed
+ *   Content-Type não suportado           → 415 Unsupported Media Type
  *   Violação de unique no banco          → 409 Conflict
  *   Qualquer outro erro                  → 500 Internal Server Error
  */
@@ -89,9 +96,38 @@ public class GlobalExceptionHandler {
         return resposta(HttpStatus.CONFLICT, "A operação viola uma restrição do banco de dados.", request, null);
     }
 
+    // Ex.: GET /api/rota-que-nao-existe
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErroResponse> rotaInexistente(NoResourceFoundException ex, HttpServletRequest request) {
+        return resposta(HttpStatus.NOT_FOUND, "Rota não encontrada.", request, null);
+    }
+
+    // Ex.: DELETE numa rota que só aceita GET e PUT.
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErroResponse> metodoNaoSuportado(HttpRequestMethodNotSupportedException ex,
+            HttpServletRequest request) {
+        return resposta(HttpStatus.METHOD_NOT_ALLOWED,
+                "Método " + ex.getMethod() + " não é suportado nesta rota.", request, null);
+    }
+
+    // Ex.: corpo enviado como text/plain em vez de application/json.
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErroResponse> tipoDeConteudoNaoSuportado(HttpMediaTypeNotSupportedException ex,
+            HttpServletRequest request) {
+        return resposta(HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+                "Content-Type não suportado. Envie o corpo como application/json.", request, null);
+    }
+
     // Erro inesperado: registra o detalhe no log, mas não expõe para o cliente.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErroResponse> inesperado(Exception ex, HttpServletRequest request) {
+        // Outras exceções do próprio Spring MVC já sabem o status HTTP certo
+        // (ex.: 406, 413); nesses casos, usa o status delas em vez de 500.
+        if (ex instanceof ErrorResponse erroDoSpring) {
+            HttpStatus status = HttpStatus.valueOf(erroDoSpring.getStatusCode().value());
+            return resposta(status, status.getReasonPhrase(), request, null);
+        }
+
         log.error("Erro inesperado em {}", request.getRequestURI(), ex);
         return resposta(HttpStatus.INTERNAL_SERVER_ERROR, "Erro interno no servidor.", request, null);
     }

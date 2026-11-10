@@ -146,6 +146,42 @@ class UsuarioServiceTest {
                 .isInstanceOf(RegraNegocioException.class);
     }
 
+    @Test
+    void alterarRole_naoDeveRebaixarOUltimoAdmin() {
+        Usuario admin = usuarioComId(1L, Role.ADMIN);
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(1L);
+
+        assertThatThrownBy(() -> usuarioService.alterarRole(1L, Role.USER))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("último administrador");
+
+        assertThat(admin.getRole()).isEqualTo(Role.ADMIN);
+    }
+
+    @Test
+    void alterarRole_podeRebaixarAdminQuandoHaOutro() {
+        Usuario admin = usuarioComId(1L, Role.ADMIN);
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(2L);
+
+        UsuarioResponse resposta = usuarioService.alterarRole(1L, Role.TECHNICIAN);
+
+        assertThat(resposta.role()).isEqualTo(Role.TECHNICIAN);
+    }
+
+    @Test
+    void desativar_naoDeveDesativarOUltimoAdmin() {
+        Usuario admin = usuarioComId(1L, Role.ADMIN);
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(1L);
+
+        assertThatThrownBy(() -> usuarioService.desativar(1L))
+                .isInstanceOf(RegraNegocioException.class);
+
+        assertThat(admin.isAtivo()).isTrue();
+    }
+
     private Usuario usuarioComId(Long id, Role role) {
         Usuario usuario = new Usuario("Ana", "ana@email.com", passwordEncoder.encode("123456"), null, ti);
         usuario.setId(id);
