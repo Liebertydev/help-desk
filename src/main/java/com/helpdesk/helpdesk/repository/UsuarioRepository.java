@@ -22,6 +22,9 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
     // Quantos admins ativos existem (o sistema nunca pode ficar sem nenhum).
     long countByRoleAndAtivoTrue(Role role);
 
+    // Quantos usuários ativos há num departamento (usado antes de desativá-lo).
+    long countByDepartamentoIdAndAtivoTrue(Long departamentoId);
+
     // Usado no login.
     Optional<Usuario> findByEmailIgnoreCase(String email);
 

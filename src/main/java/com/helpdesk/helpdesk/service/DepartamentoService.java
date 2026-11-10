@@ -11,6 +11,7 @@ import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.repository.DepartamentoRepository;
+import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
 /**
  * Regras de negócio de departamento.
@@ -22,10 +23,15 @@ import com.helpdesk.helpdesk.repository.DepartamentoRepository;
 public class DepartamentoService {
 
     private final DepartamentoRepository departamentoRepository;
+    private final UsuarioRepository usuarioRepository;
 
-    // Injeção pelo construtor: o Spring entrega o repository automaticamente.
-    public DepartamentoService(DepartamentoRepository departamentoRepository) {
+    // Injeção pelo construtor: o Spring entrega os repositories automaticamente.
+    // (UsuarioRepository, e não UsuarioService: o UsuarioService já depende deste
+    // service, e depender dele de volta criaria uma dependência circular.)
+    public DepartamentoService(DepartamentoRepository departamentoRepository,
+            UsuarioRepository usuarioRepository) {
         this.departamentoRepository = departamentoRepository;
+        this.usuarioRepository = usuarioRepository;
     }
 
     // readOnly = true: avisa o banco que é só leitura (mais leve).
@@ -75,6 +81,7 @@ public class DepartamentoService {
     /**
      * Exclusão lógica: o departamento é só desativado, não apagado,
      * porque usuários e chamados antigos continuam apontando para ele.
+     * Só é permitida quando não há mais usuários ativos no departamento.
      */
     @Transactional
     public void desativar(Long id) {
@@ -82,6 +89,14 @@ public class DepartamentoService {
 
         if (!departamento.isAtivo()) {
             throw new RegraNegocioException("O departamento já está desativado.");
+        }
+
+        // Usuários de um departamento desativado não conseguem abrir chamados
+        // (a não ser escolhendo outro). Por isso, eles precisam ser movidos antes.
+        long usuariosAtivos = usuarioRepository.countByDepartamentoIdAndAtivoTrue(id);
+        if (usuariosAtivos > 0) {
+            throw new RegraNegocioException("Não é possível desativar o departamento \"" + departamento.getNome()
+                    + "\": ele tem " + usuariosAtivos + " usuário(s) ativo(s). Mova-os para outro departamento antes.");
         }
 
         departamento.setAtivo(false);
