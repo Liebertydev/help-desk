@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -164,6 +165,32 @@ class ChamadoServiceTest {
 
         assertThatThrownBy(() -> chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 20L))
                 .isInstanceOf(RegraNegocioException.class);
+    }
+
+    @Test
+    void alterarStatus_reabrirComTecnicoIndisponivelVoltaParaAFila() {
+        tecnico.setAtivo(false);
+        Chamado chamado = chamado(StatusChamado.RESOLVIDO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        ChamadoResponse resposta = chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 10L);
+
+        assertThat(resposta.status()).isEqualTo(StatusChamado.ABERTO);
+        assertThat(resposta.tecnicoId()).isNull();
+        verify(historicoRepository, times(2)).save(any(HistoricoChamado.class));
+    }
+
+    @Test
+    void alterarStatus_reabrirComTecnicoRebaixadoVoltaParaAFila() {
+        tecnico.setRole(Role.USER);
+        Chamado chamado = chamado(StatusChamado.RESOLVIDO, tecnico);
+        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
+
+        ChamadoResponse resposta = chamadoService.alterarStatus(1L, StatusChamado.EM_ANDAMENTO, 10L);
+
+        assertThat(resposta.status()).isEqualTo(StatusChamado.ABERTO);
     }
 
     // ---------- alterarStatus pelo dono do chamado ----------

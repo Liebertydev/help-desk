@@ -92,14 +92,19 @@ public class UsuarioController {
 
     @PermitirRoles(Role.ADMIN)
     @PatchMapping("/{id}/role")
-    public UsuarioResponse alterarRole(@PathVariable Long id, @RequestBody @Valid AlterarRoleRequest request) {
-        return usuarioService.alterarRole(id, request.role());
+    public UsuarioResponse alterarRole(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody @Valid AlterarRoleRequest request) {
+        return usuarioService.alterarRole(id, request.role(), usuarioLogadoId);
     }
 
     @PermitirRoles(Role.ADMIN)
     @PatchMapping("/{id}/desativar")
-    public ResponseEntity<Void> desativar(@PathVariable Long id) {
-        usuarioService.desativar(id);
+    public ResponseEntity<Void> desativar(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id) {
+        usuarioService.desativar(id, usuarioLogadoId);
         return ResponseEntity.noContent().build();
     }
 

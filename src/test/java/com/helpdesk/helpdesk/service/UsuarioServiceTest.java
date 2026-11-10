@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
@@ -38,6 +39,9 @@ class UsuarioServiceTest {
     @Mock
     private DepartamentoService departamentoService;
 
+    @Mock
+    private FilaAtendimentoService filaAtendimentoService;
+
     // BCrypt de verdade (não é mock), para testar a criptografia de fato.
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -47,7 +51,7 @@ class UsuarioServiceTest {
 
     @BeforeEach
     void setUp() {
-        usuarioService = new UsuarioService(usuarioRepository, departamentoService, passwordEncoder);
+        usuarioService = new UsuarioService(usuarioRepository, departamentoService, filaAtendimentoService, passwordEncoder);
         ti = new Departamento("TI");
         ti.setId(1L);
     }
@@ -132,7 +136,7 @@ class UsuarioServiceTest {
         Usuario usuario = usuarioComId(10L, Role.USER);
         when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
 
-        UsuarioResponse resposta = usuarioService.alterarRole(10L, Role.TECHNICIAN);
+        UsuarioResponse resposta = usuarioService.alterarRole(10L, Role.TECHNICIAN, 99L);
 
         assertThat(resposta.role()).isEqualTo(Role.TECHNICIAN);
     }
@@ -143,7 +147,7 @@ class UsuarioServiceTest {
         usuario.setAtivo(false);
         when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
 
-        assertThatThrownBy(() -> usuarioService.alterarRole(10L, Role.TECHNICIAN))
+        assertThatThrownBy(() -> usuarioService.alterarRole(10L, Role.TECHNICIAN, 99L))
                 .isInstanceOf(RegraNegocioException.class);
     }
 
@@ -153,7 +157,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
         when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(1L);
 
-        assertThatThrownBy(() -> usuarioService.alterarRole(1L, Role.USER))
+        assertThatThrownBy(() -> usuarioService.alterarRole(1L, Role.USER, 99L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("último administrador");
 
@@ -166,7 +170,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
         when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(2L);
 
-        UsuarioResponse resposta = usuarioService.alterarRole(1L, Role.TECHNICIAN);
+        UsuarioResponse resposta = usuarioService.alterarRole(1L, Role.TECHNICIAN, 99L);
 
         assertThat(resposta.role()).isEqualTo(Role.TECHNICIAN);
     }
@@ -177,7 +181,7 @@ class UsuarioServiceTest {
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
         when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(1L);
 
-        assertThatThrownBy(() -> usuarioService.desativar(1L))
+        assertThatThrownBy(() -> usuarioService.desativar(1L, 99L))
                 .isInstanceOf(RegraNegocioException.class);
 
         assertThat(admin.isAtivo()).isTrue();
@@ -214,6 +218,44 @@ class UsuarioServiceTest {
         UsuarioResponse resposta = usuarioService.buscarPorId(20L, 10L);
 
         assertThat(resposta.id()).isEqualTo(20L);
+    }
+
+    // ---------- técnico que deixa de atender ----------
+
+    @Test
+    void alterarRole_rebaixarTecnicoDevolveChamadosAFila() {
+        Usuario tecnico = usuarioComId(10L, Role.TECHNICIAN);
+        Usuario admin = usuarioComId(99L, Role.ADMIN);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(tecnico));
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.of(admin));
+
+        usuarioService.alterarRole(10L, Role.USER, 99L);
+
+        verify(filaAtendimentoService).devolverChamadosDoTecnico(tecnico, admin, "deixou de ser técnico");
+        assertThat(tecnico.getRole()).isEqualTo(Role.USER);
+    }
+
+    @Test
+    void desativar_tecnicoDevolveChamadosAFila() {
+        Usuario tecnico = usuarioComId(10L, Role.TECHNICIAN);
+        Usuario admin = usuarioComId(99L, Role.ADMIN);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(tecnico));
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.of(admin));
+
+        usuarioService.desativar(10L, 99L);
+
+        verify(filaAtendimentoService).devolverChamadosDoTecnico(tecnico, admin, "técnico desativado");
+        assertThat(tecnico.isAtivo()).isFalse();
+    }
+
+    @Test
+    void desativar_usuarioComumNaoMexeNaFila() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+
+        usuarioService.desativar(10L, 99L);
+
+        verifyNoInteractions(filaAtendimentoService);
     }
 
     private Usuario usuarioComId(Long id, Role role) {
