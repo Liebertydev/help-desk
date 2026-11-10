@@ -138,7 +138,7 @@ public class ChamadoService {
         chamado.setPrioridade(request.prioridade());
         chamado.setDataPrevisaoResolucao(request.dataPrevisaoResolucao());
 
-        return ChamadoResponse.from(chamado);
+        return salvarEResponder(chamado);
     }
 
     // ---------- Atendimento ----------
@@ -162,7 +162,7 @@ public class ChamadoService {
         }
 
         chamado.setTecnico(tecnico);
-        return ChamadoResponse.from(chamado);
+        return salvarEResponder(chamado);
     }
 
     @Transactional
@@ -182,7 +182,7 @@ public class ChamadoService {
         }
 
         chamado.setStatus(novoStatus);
-        return ChamadoResponse.from(chamado);
+        return salvarEResponder(chamado);
     }
 
     @Transactional(readOnly = true)
@@ -197,6 +197,16 @@ public class ChamadoService {
         if (chamado.getStatus() == StatusChamado.FECHADO) {
             throw new RegraNegocioException("Chamado fechado não pode ser alterado.");
         }
+    }
+
+    /**
+     * O @UpdateTimestamp só é preenchido quando o Hibernate grava no banco (flush),
+     * o que normalmente acontece no fim da transação, DEPOIS de a resposta ser montada.
+     * O flush() antecipa a gravação para a resposta já sair com o updatedAt novo.
+     */
+    private ChamadoResponse salvarEResponder(Chamado chamado) {
+        chamadoRepository.flush();
+        return ChamadoResponse.from(chamado);
     }
 
     private List<ChamadoResponse> paraResponse(List<Chamado> chamados) {

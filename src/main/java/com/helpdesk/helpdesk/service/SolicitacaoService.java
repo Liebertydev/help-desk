@@ -89,7 +89,7 @@ public class SolicitacaoService {
         usuarioService.alterarRole(solicitacao.getUsuario().getId(), Role.TECHNICIAN);
         solicitacao.setStatus(StatusSolicitacao.APROVADA);
 
-        return SolicitacaoTecnicoResponse.from(solicitacao);
+        return salvarEResponder(solicitacao);
     }
 
     @Transactional
@@ -98,7 +98,7 @@ public class SolicitacaoService {
 
         solicitacao.setStatus(StatusSolicitacao.REJEITADA);
 
-        return SolicitacaoTecnicoResponse.from(solicitacao);
+        return salvarEResponder(solicitacao);
     }
 
     // ---------- Auxiliares ----------
@@ -115,6 +115,13 @@ public class SolicitacaoService {
     private SolicitacaoTecnico buscarEntidade(Long id) {
         return solicitacaoRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Solicitação", id));
+    }
+
+    // flush() antecipa a gravação para a resposta já sair com o updatedAt novo
+    // (mesmo motivo explicado no ChamadoService).
+    private SolicitacaoTecnicoResponse salvarEResponder(SolicitacaoTecnico solicitacao) {
+        solicitacaoRepository.flush();
+        return SolicitacaoTecnicoResponse.from(solicitacao);
     }
 
     private List<SolicitacaoTecnicoResponse> paraResponse(List<SolicitacaoTecnico> solicitacoes) {
