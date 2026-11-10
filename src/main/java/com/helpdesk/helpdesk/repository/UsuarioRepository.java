@@ -14,7 +14,10 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
 
     List<Usuario> findByRoleOrderByNameAsc(Role role);
 
-    // Vai ser usado no login.
+    // Quantos admins ativos existem (o sistema nunca pode ficar sem nenhum).
+    long countByRoleAndAtivoTrue(Role role);
+
+    // Usado no login.
     Optional<Usuario> findByEmailIgnoreCase(String email);
 
     // Verificações de duplicidade ao criar...
