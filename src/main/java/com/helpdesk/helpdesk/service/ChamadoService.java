@@ -37,6 +37,8 @@ import com.helpdesk.helpdesk.repository.HistoricoChamadoRepository;
  *          (reabrir, se o usuário não aceitar a solução)
  *
  * - EM_ANDAMENTO exige um técnico atribuído.
+ * - Técnicos e admins seguem o fluxo inteiro. O dono do chamado só age depois
+ *   que ele foi RESOLVIDO: aceita a solução (FECHADO) ou reabre (EM_ANDAMENTO).
  * - FECHADO é final: o chamado não pode mais ser alterado nem receber comentários.
  *
  * Histórico: abertura, mudanças de status e trocas de técnico são registradas
@@ -207,6 +209,9 @@ public class ChamadoService {
 
         Chamado chamado = buscarEntidade(id);
         StatusChamado atual = chamado.getStatus();
+        Usuario autor = usuarioService.buscarEntidade(usuarioLogadoId);
+
+        garantirPermissaoDeStatus(chamado, autor);
 
         if (!TRANSICOES_PERMITIDAS.get(atual).contains(novoStatus)) {
             throw new RegraNegocioException("Não é permitido mudar o status de " + atual + " para " + novoStatus + ".");
@@ -216,7 +221,7 @@ public class ChamadoService {
         }
 
         chamado.setStatus(novoStatus);
-        registrar(chamado, usuarioService.buscarEntidade(usuarioLogadoId), TipoHistorico.STATUS,
+        registrar(chamado, autor, TipoHistorico.STATUS,
                 "Status alterado de " + atual + " para " + novoStatus + ".");
         return salvarEResponder(chamado);
     }
@@ -273,6 +278,25 @@ public class ChamadoService {
         Role role = usuarioService.buscarEntidade(usuarioLogadoId).getRole();
         if (role != Role.TECHNICIAN && role != Role.ADMIN) {
             throw new AcessoNegadoException("Você só pode acessar os chamados que abriu.");
+        }
+    }
+
+    /**
+     * Técnicos e admins podem mudar o status em qualquer etapa.
+     * O dono do chamado só decide depois que o técnico marcou como RESOLVIDO:
+     * a partir daí, o mapa de transições só permite FECHADO ou EM_ANDAMENTO,
+     * que são exatamente "aceitar a solução" e "reabrir".
+     */
+    private void garantirPermissaoDeStatus(Chamado chamado, Usuario autor) {
+        if (autor.getRole() == Role.TECHNICIAN || autor.getRole() == Role.ADMIN) {
+            return;
+        }
+        if (!chamado.getUsuario().getId().equals(autor.getId())) {
+            throw new AcessoNegadoException("Você só pode acessar os chamados que abriu.");
+        }
+        if (chamado.getStatus() != StatusChamado.RESOLVIDO) {
+            throw new AcessoNegadoException(
+                    "Você só pode fechar ou reabrir o chamado depois que o técnico marcá-lo como RESOLVIDO.");
         }
     }
 
