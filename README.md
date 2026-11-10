@@ -64,23 +64,23 @@ O `.env` **não vai para o git**: cada pessoa tem o seu. Só é preciso preenche
 ### 4. Subir a aplicação
 
 ```bash
-sh mvnw spring-boot:run
+./mvnw spring-boot:run
 ```
 
 Com **JDK 25**, acrescente `-Djava.version=25` a qualquer comando do Maven:
 
 ```bash
-sh mvnw spring-boot:run -Djava.version=25
+./mvnw spring-boot:run -Djava.version=25
 ```
 
-> 💡 Para usar `./mvnw` em vez de `sh mvnw`, rode uma vez `chmod +x mvnw`.
+> 💡 No Windows, use `mvnw.cmd` no lugar de `./mvnw`.
 
 Na primeira execução, o **seed** popula o banco com dados de teste (veja abaixo).
 
 ### 5. Testes
 
 ```bash
-sh mvnw test
+./mvnw test
 ```
 
 Os testes dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
@@ -131,7 +131,7 @@ Também são criados:
 DROP TABLE historico_chamado, chamado, solicitacao_tecnico, users, departamento;
 ```
 
-O seed só roda no perfil `dev`. Para rodar sem ele, use `SPRING_PROFILES_ACTIVE=prod`.
+O seed só roda no perfil `dev`, que também mostra no console cada SQL executado (configurado em `application-dev.properties`). Para rodar sem os dois, use `SPRING_PROFILES_ACTIVE=prod`.
 
 ---
 
@@ -371,6 +371,7 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
 - E-mail, CPF e matrícula são únicos.
 - O sistema sempre precisa ter **pelo menos um admin ativo**: não é possível rebaixar nem desativar o último.
 - Não é possível cadastrar usuários nem abrir chamados em departamentos desativados.
+- Um departamento só pode ser desativado quando **não tem usuários ativos**. Antes, é preciso movê-los para outro departamento.
 - Usuários e departamentos nunca são apagados, só **desativados**, porque chamados antigos continuam ligados a eles.
 - Senhas são guardadas com **BCrypt** e nunca aparecem nas respostas da API.
 

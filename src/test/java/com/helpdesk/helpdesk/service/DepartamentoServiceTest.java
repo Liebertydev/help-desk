@@ -21,6 +21,7 @@ import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.repository.DepartamentoRepository;
+import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
 /**
  * Teste unitário: o repository é simulado (mock) com Mockito,
@@ -31,6 +32,9 @@ class DepartamentoServiceTest {
 
     @Mock
     private DepartamentoRepository departamentoRepository;
+
+    @Mock
+    private UsuarioRepository usuarioRepository;
 
     @InjectMocks
     private DepartamentoService departamentoService;
@@ -95,6 +99,19 @@ class DepartamentoServiceTest {
 
         assertThatThrownBy(() -> departamentoService.desativar(1L))
                 .isInstanceOf(RegraNegocioException.class);
+    }
+
+    @Test
+    void desativar_deveRecusarQuandoHaUsuariosAtivos() {
+        Departamento existente = departamentoComId(1L, "TI");
+        when(departamentoRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(usuarioRepository.countByDepartamentoIdAndAtivoTrue(1L)).thenReturn(3L);
+
+        assertThatThrownBy(() -> departamentoService.desativar(1L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("3 usuário(s) ativo(s)");
+
+        assertThat(existente.isAtivo()).isTrue();
     }
 
     private Departamento departamentoComId(Long id, String nome) {
