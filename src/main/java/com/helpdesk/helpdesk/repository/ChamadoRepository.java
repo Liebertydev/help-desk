@@ -1,5 +1,6 @@
 package com.helpdesk.helpdesk.repository;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.EntityGraph;
@@ -28,4 +29,7 @@ public interface ChamadoRepository extends JpaRepository<Chamado, Long> {
     // Fila do técnico.
     @EntityGraph(attributePaths = { "usuario", "tecnico", "departamento" })
     List<Chamado> findByTecnicoIdOrderByCreatedAtDesc(Long tecnicoId);
+
+    // Chamados de um técnico em certos status (usado ao devolver chamados à fila).
+    List<Chamado> findByTecnicoIdAndStatusIn(Long tecnicoId, Collection<StatusChamado> status);
 }

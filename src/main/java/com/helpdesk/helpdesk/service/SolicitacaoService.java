@@ -89,7 +89,7 @@ public class SolicitacaoService {
         SolicitacaoTecnico solicitacao = buscarPendente(id);
         Usuario admin = usuarioService.buscarEntidade(adminId);
 
-        usuarioService.alterarRole(solicitacao.getUsuario().getId(), Role.TECHNICIAN);
+        usuarioService.alterarRole(solicitacao.getUsuario().getId(), Role.TECHNICIAN, adminId);
         // A observação da aprovação é opcional (o corpo da requisição pode nem vir).
         String observacao = request == null ? null : textoOuNulo(request.observacao());
         solicitacao.avaliar(StatusSolicitacao.APROVADA, admin, observacao);

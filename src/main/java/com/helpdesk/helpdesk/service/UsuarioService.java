@@ -30,13 +30,16 @@ public class UsuarioService {
 
     private final UsuarioRepository usuarioRepository;
     private final DepartamentoService departamentoService;
+    private final FilaAtendimentoService filaAtendimentoService;
     private final PasswordEncoder passwordEncoder;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
             DepartamentoService departamentoService,
+            FilaAtendimentoService filaAtendimentoService,
             PasswordEncoder passwordEncoder) {
         this.usuarioRepository = usuarioRepository;
         this.departamentoService = departamentoService;
+        this.filaAtendimentoService = filaAtendimentoService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -155,11 +158,13 @@ public class UsuarioService {
     // ---------- Ações de administrador ----------
 
     /**
-     * Também será usado pelo SolicitacaoService ao aprovar uma solicitação
-     * (USER -> TECHNICIAN).
+     * Também é usado pelo SolicitacaoService ao aprovar uma solicitação (USER -> TECHNICIAN).
+     * Se o usuário deixa de ser técnico, os chamados pendentes dele voltam para a fila.
+     *
+     * @param usuarioLogadoId quem está alterando (vai para o histórico dos chamados).
      */
     @Transactional
-    public UsuarioResponse alterarRole(Long id, Role novoRole) {
+    public UsuarioResponse alterarRole(Long id, Role novoRole, Long usuarioLogadoId) {
         if (novoRole == null) {
             throw new RegraNegocioException("O role é obrigatório.");
         }
@@ -176,13 +181,25 @@ public class UsuarioService {
             garantirQueNaoEOUltimoAdmin("rebaixar");
         }
 
+        // Só TECHNICIAN pode ser atribuído a chamados: quem deixa de ser técnico
+        // (inclusive promovido a ADMIN) não pode continuar com chamados pendentes.
+        if (usuario.getRole() == Role.TECHNICIAN) {
+            filaAtendimentoService.devolverChamadosDoTecnico(usuario, buscarEntidade(usuarioLogadoId),
+                    "deixou de ser técnico");
+        }
+
         usuario.setRole(novoRole);
         return UsuarioResponse.from(usuario);
     }
 
-    /** Exclusão lógica: o usuário continua no banco por causa dos chamados ligados a ele. */
+    /**
+     * Exclusão lógica: o usuário continua no banco por causa dos chamados ligados a ele.
+     * Se for técnico, os chamados pendentes dele voltam para a fila.
+     *
+     * @param usuarioLogadoId quem está desativando (vai para o histórico dos chamados).
+     */
     @Transactional
-    public void desativar(Long id) {
+    public void desativar(Long id, Long usuarioLogadoId) {
         Usuario usuario = buscarEntidade(id);
 
         if (!usuario.isAtivo()) {
@@ -190,6 +207,10 @@ public class UsuarioService {
         }
         if (usuario.getRole() == Role.ADMIN) {
             garantirQueNaoEOUltimoAdmin("desativar");
+        }
+        if (usuario.getRole() == Role.TECHNICIAN) {
+            filaAtendimentoService.devolverChamadosDoTecnico(usuario, buscarEntidade(usuarioLogadoId),
+                    "técnico desativado");
         }
 
         usuario.setAtivo(false);

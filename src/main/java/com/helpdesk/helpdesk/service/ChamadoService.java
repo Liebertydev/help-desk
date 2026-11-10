@@ -236,6 +236,19 @@ public class ChamadoService {
             throw new RegraNegocioException("Atribua um técnico antes de colocar o chamado EM_ANDAMENTO.");
         }
 
+        // Reabertura de um chamado cujo técnico não atende mais (desativado ou rebaixado):
+        // em vez de EM_ANDAMENTO com um técnico indisponível, o chamado volta para a fila.
+        if (atual == StatusChamado.RESOLVIDO && novoStatus == StatusChamado.EM_ANDAMENTO
+                && !tecnicoDisponivel(chamado.getTecnico())) {
+            Usuario antigo = chamado.getTecnico();
+            chamado.setTecnico(null);
+            chamado.setStatus(StatusChamado.ABERTO);
+            registrar(chamado, autor, TipoHistorico.TECNICO, "Técnico " + antigo.getName()
+                    + " removido do chamado (não está mais disponível). Chamado devolvido à fila.");
+            registrar(chamado, autor, TipoHistorico.STATUS, "Chamado reaberto: status alterado de RESOLVIDO para ABERTO.");
+            return salvarEResponder(chamado);
+        }
+
         chamado.setStatus(novoStatus);
         registrar(chamado, autor, TipoHistorico.STATUS,
                 "Status alterado de " + atual + " para " + novoStatus + ".");
@@ -313,6 +326,11 @@ public class ChamadoService {
             throw new AcessoNegadoException(
                     "Você só pode fechar ou reabrir o chamado depois que o técnico marcá-lo como RESOLVIDO.");
         }
+    }
+
+    // Técnico que ainda pode atender: ativo e com role TECHNICIAN.
+    private boolean tecnicoDisponivel(Usuario tecnico) {
+        return tecnico != null && tecnico.isAtivo() && tecnico.getRole() == Role.TECHNICIAN;
     }
 
     // "Equipe de atendimento": técnicos e admins.
