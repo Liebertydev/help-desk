@@ -16,6 +16,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import com.helpdesk.helpdesk.dto.RejeitarSolicitacaoRequest;
 import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoResponse;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
@@ -38,6 +39,7 @@ class SolicitacaoServiceTest {
     private SolicitacaoService solicitacaoService;
 
     private Usuario pedro;
+    private Usuario admin;
 
     @BeforeEach
     void setUp() {
@@ -45,6 +47,9 @@ class SolicitacaoServiceTest {
         adm.setId(1L);
         pedro = new Usuario("Pedro", "pedro@email.com", "hash", null, adm);
         pedro.setId(10L);
+        admin = new Usuario("Administrador", "admin@email.com", "hash", null, adm);
+        admin.setId(99L);
+        admin.setRole(Role.ADMIN);
     }
 
     @Test
@@ -84,10 +89,14 @@ class SolicitacaoServiceTest {
     void aprovar_devePromoverUsuarioATecnico() {
         SolicitacaoTecnico solicitacao = solicitacao(StatusSolicitacao.PENDENTE);
         when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacao));
+        when(usuarioService.buscarEntidade(99L)).thenReturn(admin);
 
-        SolicitacaoTecnicoResponse resposta = solicitacaoService.aprovar(1L);
+        SolicitacaoTecnicoResponse resposta = solicitacaoService.aprovar(1L, 99L, null);
 
         assertThat(resposta.status()).isEqualTo(StatusSolicitacao.APROVADA);
+        assertThat(resposta.avaliadoPorNome()).isEqualTo("Administrador");
+        assertThat(resposta.avaliadoEm()).isNotNull();
+        assertThat(resposta.observacao()).isNull();
         verify(usuarioService).alterarRole(10L, Role.TECHNICIAN);
     }
 
@@ -95,13 +104,29 @@ class SolicitacaoServiceTest {
     void aprovar_naoDeveAprovarSeAPromocaoFalhar() {
         SolicitacaoTecnico solicitacao = solicitacao(StatusSolicitacao.PENDENTE);
         when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacao));
+        when(usuarioService.buscarEntidade(99L)).thenReturn(admin);
         when(usuarioService.alterarRole(10L, Role.TECHNICIAN))
                 .thenThrow(new RegraNegocioException("Não é possível alterar o role de um usuário desativado."));
 
-        assertThatThrownBy(() -> solicitacaoService.aprovar(1L))
+        assertThatThrownBy(() -> solicitacaoService.aprovar(1L, 99L, null))
                 .isInstanceOf(RegraNegocioException.class);
 
         assertThat(solicitacao.getStatus()).isEqualTo(StatusSolicitacao.PENDENTE);
+        assertThat(solicitacao.getAvaliadoPor()).isNull();
+    }
+
+    @Test
+    void rejeitar_deveRegistrarMotivoEAdmin() {
+        SolicitacaoTecnico solicitacao = solicitacao(StatusSolicitacao.PENDENTE);
+        when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacao));
+        when(usuarioService.buscarEntidade(99L)).thenReturn(admin);
+
+        SolicitacaoTecnicoResponse resposta = solicitacaoService.rejeitar(1L, 99L,
+                new RejeitarSolicitacaoRequest("  Ainda não concluiu o treinamento.  "));
+
+        assertThat(resposta.status()).isEqualTo(StatusSolicitacao.REJEITADA);
+        assertThat(resposta.observacao()).isEqualTo("Ainda não concluiu o treinamento.");
+        assertThat(resposta.avaliadoPorId()).isEqualTo(99L);
     }
 
     @Test
@@ -109,7 +134,7 @@ class SolicitacaoServiceTest {
         SolicitacaoTecnico solicitacao = solicitacao(StatusSolicitacao.APROVADA);
         when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacao));
 
-        assertThatThrownBy(() -> solicitacaoService.rejeitar(1L))
+        assertThatThrownBy(() -> solicitacaoService.rejeitar(1L, 99L, new RejeitarSolicitacaoRequest("Motivo")))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("APROVADA");
     }

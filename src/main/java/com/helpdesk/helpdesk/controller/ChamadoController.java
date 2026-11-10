@@ -22,6 +22,8 @@ import com.helpdesk.helpdesk.dto.AtribuirTecnicoRequest;
 import com.helpdesk.helpdesk.dto.ChamadoRequest;
 import com.helpdesk.helpdesk.dto.ChamadoResponse;
 import com.helpdesk.helpdesk.dto.ChamadoUpdateRequest;
+import com.helpdesk.helpdesk.dto.ComentarioRequest;
+import com.helpdesk.helpdesk.dto.HistoricoChamadoResponse;
 import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.StatusChamado;
 import com.helpdesk.helpdesk.service.ChamadoService;
@@ -102,14 +104,41 @@ public class ChamadoController {
     // Body: { "tecnicoId": 2 }
     @PermitirRoles({ Role.TECHNICIAN, Role.ADMIN })
     @PatchMapping("/{id}/tecnico")
-    public ChamadoResponse atribuirTecnico(@PathVariable Long id, @RequestBody @Valid AtribuirTecnicoRequest request) {
-        return chamadoService.atribuirTecnico(id, request.tecnicoId());
+    public ChamadoResponse atribuirTecnico(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody @Valid AtribuirTecnicoRequest request) {
+        return chamadoService.atribuirTecnico(id, request.tecnicoId(), usuarioLogadoId);
     }
 
     // Body: { "status": "EM_ANDAMENTO" }
     @PermitirRoles({ Role.TECHNICIAN, Role.ADMIN })
     @PatchMapping("/{id}/status")
-    public ChamadoResponse alterarStatus(@PathVariable Long id, @RequestBody @Valid AlterarStatusChamadoRequest request) {
-        return chamadoService.alterarStatus(id, request.status());
+    public ChamadoResponse alterarStatus(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody @Valid AlterarStatusChamadoRequest request) {
+        return chamadoService.alterarStatus(id, request.status(), usuarioLogadoId);
+    }
+
+    // ---------- Histórico ----------
+
+    // Linha do tempo: abertura, comentários, mudanças de status e de técnico.
+    // Mesma regra de acesso do chamado: dono, técnico ou admin.
+    @GetMapping("/{id}/historico")
+    public List<HistoricoChamadoResponse> listarHistorico(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id) {
+        return chamadoService.listarHistorico(id, usuarioLogadoId);
+    }
+
+    // Body: { "mensagem": "Já reiniciei e continua igual." }
+    @PostMapping("/{id}/comentarios")
+    public ResponseEntity<HistoricoChamadoResponse> comentar(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody @Valid ComentarioRequest request) {
+        HistoricoChamadoResponse comentario = chamadoService.comentar(id, request, usuarioLogadoId);
+        return ResponseEntity.created(URI.create("/api/chamados/" + id + "/historico")).body(comentario);
     }
 }

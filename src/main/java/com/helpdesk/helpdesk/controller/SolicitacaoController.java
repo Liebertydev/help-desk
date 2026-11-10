@@ -9,16 +9,21 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.helpdesk.helpdesk.auth.AutenticacaoInterceptor;
 import com.helpdesk.helpdesk.auth.PermitirRoles;
+import com.helpdesk.helpdesk.dto.AprovarSolicitacaoRequest;
+import com.helpdesk.helpdesk.dto.RejeitarSolicitacaoRequest;
 import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoResponse;
 import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.StatusSolicitacao;
 import com.helpdesk.helpdesk.service.SolicitacaoService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/solicitacoes")
@@ -64,15 +69,23 @@ public class SolicitacaoController {
         return ResponseEntity.created(URI.create("/api/solicitacoes/" + criada.id())).body(criada);
     }
 
+    // Body opcional: { "observacao": "Bem-vinda à equipe!" }
     @PermitirRoles(Role.ADMIN)
     @PatchMapping("/{id}/aprovar")
-    public SolicitacaoTecnicoResponse aprovar(@PathVariable Long id) {
-        return solicitacaoService.aprovar(id);
+    public SolicitacaoTecnicoResponse aprovar(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody(required = false) @Valid AprovarSolicitacaoRequest request) {
+        return solicitacaoService.aprovar(id, usuarioLogadoId, request);
     }
 
+    // Body obrigatório: { "motivo": "Ainda não concluiu o treinamento." }
     @PermitirRoles(Role.ADMIN)
     @PatchMapping("/{id}/rejeitar")
-    public SolicitacaoTecnicoResponse rejeitar(@PathVariable Long id) {
-        return solicitacaoService.rejeitar(id);
+    public SolicitacaoTecnicoResponse rejeitar(
+            @RequestAttribute(AutenticacaoInterceptor.USUARIO_LOGADO_ID) Long usuarioLogadoId,
+            @PathVariable Long id,
+            @RequestBody @Valid RejeitarSolicitacaoRequest request) {
+        return solicitacaoService.rejeitar(id, usuarioLogadoId, request);
     }
 }

@@ -10,16 +10,20 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.helpdesk.helpdesk.models.Categoria;
 import com.helpdesk.helpdesk.models.Chamado;
 import com.helpdesk.helpdesk.models.Departamento;
+import com.helpdesk.helpdesk.models.HistoricoChamado;
 import com.helpdesk.helpdesk.models.Prioridade;
 import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.SolicitacaoTecnico;
 import com.helpdesk.helpdesk.models.StatusChamado;
 import com.helpdesk.helpdesk.models.StatusSolicitacao;
+import com.helpdesk.helpdesk.models.TipoHistorico;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.ChamadoRepository;
 import com.helpdesk.helpdesk.repository.DepartamentoRepository;
+import com.helpdesk.helpdesk.repository.HistoricoChamadoRepository;
 import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
@@ -44,17 +48,20 @@ public class DataSeeder implements CommandLineRunner {
     private final UsuarioRepository usuarioRepository;
     private final ChamadoRepository chamadoRepository;
     private final SolicitacaoRepository solicitacaoRepository;
+    private final HistoricoChamadoRepository historicoRepository;
     private final PasswordEncoder passwordEncoder;
 
     public DataSeeder(DepartamentoRepository departamentoRepository,
             UsuarioRepository usuarioRepository,
             ChamadoRepository chamadoRepository,
             SolicitacaoRepository solicitacaoRepository,
+            HistoricoChamadoRepository historicoRepository,
             PasswordEncoder passwordEncoder) {
         this.departamentoRepository = departamentoRepository;
         this.usuarioRepository = usuarioRepository;
         this.chamadoRepository = chamadoRepository;
         this.solicitacaoRepository = solicitacaoRepository;
+        this.historicoRepository = historicoRepository;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -94,17 +101,17 @@ public class DataSeeder implements CommandLineRunner {
         // ---------- Chamados (um em cada status) ----------
         Chamado impressora = new Chamado("Impressora não imprime",
                 "A impressora do RH mostra a mensagem de papel atolado, mas não há papel preso.",
-                "Hardware", "PAT-000123", "Impressora HP LaserJet", joao, null, rh);
+                Categoria.IMPRESSORA, "PAT-000123", "Impressora HP LaserJet", joao, null, rh);
         impressora.setLocal("Bloco A");
-        impressora.setSetor("Sala 101");
+        impressora.setSala("Sala 101");
         impressora.setPrioridade(Prioridade.MEDIA);
         chamadoRepository.save(impressora);
 
         Chamado internet = new Chamado("Sem acesso à internet",
                 "Todos os computadores do financeiro estão sem internet desde as 8h.",
-                "Rede", null, null, ana, tecnicaMariana, financeiro);
+                Categoria.REDE, null, null, ana, tecnicaMariana, financeiro);
         internet.setLocal("Bloco B");
-        internet.setSetor("Sala 204");
+        internet.setSala("Sala 204");
         internet.setStatus(StatusChamado.EM_ANDAMENTO);
         internet.setPrioridade(Prioridade.URGENTE);
         internet.setDataPrevisaoResolucao(LocalDate.now().plusDays(1));
@@ -112,7 +119,7 @@ public class DataSeeder implements CommandLineRunner {
 
         Chamado sistema = new Chamado("Erro ao gerar relatório",
                 "O sistema de folha de pagamento fecha sozinho ao exportar o relatório mensal.",
-                "Software", null, null, joao, tecnicoCarlos, rh);
+                Categoria.SOFTWARE, null, null, joao, tecnicoCarlos, rh);
         sistema.setStatus(StatusChamado.RESOLVIDO);
         sistema.setPrioridade(Prioridade.ALTA);
         sistema.setDataPrevisaoResolucao(LocalDate.now().minusDays(2));
@@ -120,11 +127,36 @@ public class DataSeeder implements CommandLineRunner {
 
         Chamado mouse = new Chamado("Troca de mouse",
                 "O mouse está com o clique duplicando. Solicito a troca.",
-                "Hardware", "PAT-000456", "Mouse USB", pedro, tecnicoCarlos, administrativo);
+                Categoria.HARDWARE, "PAT-000456", "Mouse USB", pedro, tecnicoCarlos, administrativo);
         mouse.setStatus(StatusChamado.FECHADO);
         mouse.setPrioridade(Prioridade.BAIXA);
         mouse.setDetalheLocal("Mesa próxima à janela");
         chamadoRepository.save(mouse);
+
+        // ---------- Histórico dos chamados ----------
+        // Na aplicação, o ChamadoService registra isso sozinho; aqui o seed simula
+        // o que teria acontecido para cada chamado chegar ao status atual.
+        historico(impressora, joao, TipoHistorico.ABERTURA, "Chamado aberto.");
+
+        historico(internet, ana, TipoHistorico.ABERTURA, "Chamado aberto.");
+        historico(internet, admin, TipoHistorico.TECNICO, "Técnico atribuído: Mariana Lima.");
+        historico(internet, tecnicaMariana, TipoHistorico.STATUS, "Status alterado de ABERTO para EM_ANDAMENTO.");
+        historico(internet, tecnicaMariana, TipoHistorico.COMENTARIO,
+                "O roteador do bloco B está com defeito. Já solicitei a troca.");
+        historico(internet, ana, TipoHistorico.COMENTARIO, "Obrigada! Tem previsão?");
+
+        historico(sistema, joao, TipoHistorico.ABERTURA, "Chamado aberto.");
+        historico(sistema, tecnicoCarlos, TipoHistorico.TECNICO, "Técnico atribuído: Carlos Souza.");
+        historico(sistema, tecnicoCarlos, TipoHistorico.STATUS, "Status alterado de ABERTO para EM_ANDAMENTO.");
+        historico(sistema, tecnicoCarlos, TipoHistorico.COMENTARIO,
+                "Atualizei o sistema para a versão mais recente. Pode testar?");
+        historico(sistema, tecnicoCarlos, TipoHistorico.STATUS, "Status alterado de EM_ANDAMENTO para RESOLVIDO.");
+
+        historico(mouse, pedro, TipoHistorico.ABERTURA, "Chamado aberto.");
+        historico(mouse, tecnicoCarlos, TipoHistorico.TECNICO, "Técnico atribuído: Carlos Souza.");
+        historico(mouse, tecnicoCarlos, TipoHistorico.STATUS, "Status alterado de ABERTO para EM_ANDAMENTO.");
+        historico(mouse, tecnicoCarlos, TipoHistorico.STATUS, "Status alterado de EM_ANDAMENTO para RESOLVIDO.");
+        historico(mouse, tecnicoCarlos, TipoHistorico.STATUS, "Status alterado de RESOLVIDO para FECHADO.");
 
         // ---------- Solicitações para virar técnico ----------
         // Pendente: aguardando o admin avaliar.
@@ -132,7 +164,7 @@ public class DataSeeder implements CommandLineRunner {
 
         // Aprovada: a Mariana pediu e hoje já é técnica.
         SolicitacaoTecnico aprovada = new SolicitacaoTecnico(tecnicaMariana);
-        aprovada.setStatus(StatusSolicitacao.APROVADA);
+        aprovada.avaliar(StatusSolicitacao.APROVADA, admin, "Experiência comprovada em redes.");
         solicitacaoRepository.save(aprovada);
 
         log.info("Seed concluído: {} departamentos, {} usuários, {} chamados, {} solicitações. "
@@ -140,6 +172,10 @@ public class DataSeeder implements CommandLineRunner {
                 departamentoRepository.count(), usuarioRepository.count(),
                 chamadoRepository.count(), solicitacaoRepository.count(),
                 admin.getEmail(), SENHA_PADRAO);
+    }
+
+    private void historico(Chamado chamado, Usuario autor, TipoHistorico tipo, String mensagem) {
+        historicoRepository.save(new HistoricoChamado(chamado, autor, tipo, mensagem));
     }
 
     private Usuario criarUsuario(String nome, String email, String ocupacao, Departamento departamento,

@@ -3,6 +3,7 @@ package com.helpdesk.helpdesk.dto;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+import com.helpdesk.helpdesk.models.Categoria;
 import com.helpdesk.helpdesk.models.Chamado;
 import com.helpdesk.helpdesk.models.Prioridade;
 import com.helpdesk.helpdesk.models.StatusChamado;
@@ -16,11 +17,11 @@ public record ChamadoResponse(
         Long id,
         String titulo,
         String descricao,
-        String categoria,
+        Categoria categoria,
         String numeroPatrimonio,
         String equipamento,
         String local,
-        String setor,
+        String sala,
         String detalheLocal,
         StatusChamado status,
         Prioridade prioridade,
@@ -45,7 +46,7 @@ public record ChamadoResponse(
                 chamado.getNumeroPatrimonio(),
                 chamado.getEquipamento(),
                 chamado.getLocal(),
-                chamado.getSetor(),
+                chamado.getSala(),
                 chamado.getDetalheLocal(),
                 chamado.getStatus(),
                 chamado.getPrioridade(),

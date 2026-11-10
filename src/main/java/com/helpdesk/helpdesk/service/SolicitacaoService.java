@@ -5,6 +5,8 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.helpdesk.helpdesk.dto.AprovarSolicitacaoRequest;
+import com.helpdesk.helpdesk.dto.RejeitarSolicitacaoRequest;
 import com.helpdesk.helpdesk.dto.SolicitacaoTecnicoResponse;
 import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
@@ -83,20 +85,25 @@ public class SolicitacaoService {
      * (ex.: usuário desativado), a solicitação também NÃO fica aprovada.
      */
     @Transactional
-    public SolicitacaoTecnicoResponse aprovar(Long id) {
+    public SolicitacaoTecnicoResponse aprovar(Long id, Long adminId, AprovarSolicitacaoRequest request) {
         SolicitacaoTecnico solicitacao = buscarPendente(id);
+        Usuario admin = usuarioService.buscarEntidade(adminId);
 
         usuarioService.alterarRole(solicitacao.getUsuario().getId(), Role.TECHNICIAN);
-        solicitacao.setStatus(StatusSolicitacao.APROVADA);
+        // A observação da aprovação é opcional (o corpo da requisição pode nem vir).
+        String observacao = request == null ? null : textoOuNulo(request.observacao());
+        solicitacao.avaliar(StatusSolicitacao.APROVADA, admin, observacao);
 
         return salvarEResponder(solicitacao);
     }
 
+    /** O motivo é obrigatório (validado no DTO): o usuário precisa saber por que foi recusado. */
     @Transactional
-    public SolicitacaoTecnicoResponse rejeitar(Long id) {
+    public SolicitacaoTecnicoResponse rejeitar(Long id, Long adminId, RejeitarSolicitacaoRequest request) {
         SolicitacaoTecnico solicitacao = buscarPendente(id);
+        Usuario admin = usuarioService.buscarEntidade(adminId);
 
-        solicitacao.setStatus(StatusSolicitacao.REJEITADA);
+        solicitacao.avaliar(StatusSolicitacao.REJEITADA, admin, request.motivo().trim());
 
         return salvarEResponder(solicitacao);
     }
@@ -122,6 +129,10 @@ public class SolicitacaoService {
     private SolicitacaoTecnicoResponse salvarEResponder(SolicitacaoTecnico solicitacao) {
         solicitacaoRepository.flush();
         return SolicitacaoTecnicoResponse.from(solicitacao);
+    }
+
+    private String textoOuNulo(String valor) {
+        return valor == null || valor.isBlank() ? null : valor.trim();
     }
 
     private List<SolicitacaoTecnicoResponse> paraResponse(List<SolicitacaoTecnico> solicitacoes) {
