@@ -1,5 +1,8 @@
 HELP.md
 target/
+
+### Configuração local (cada um tem o seu; o modelo é o .env.example) ###
+.env
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
