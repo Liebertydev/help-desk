@@ -39,8 +39,11 @@ import com.helpdesk.helpdesk.repository.HistoricoChamadoRepository;
  *          (reabrir, se o usuário não aceitar a solução)
  *
  * - EM_ANDAMENTO exige um técnico atribuído.
- * - Técnicos e admins seguem o fluxo inteiro. O dono do chamado só age depois
- *   que ele foi RESOLVIDO: aceita a solução (FECHADO) ou reabre (EM_ANDAMENTO).
+ * - O técnico atribuído e os admins seguem o fluxo inteiro. O dono do chamado só age
+ *   depois que ele foi RESOLVIDO: aceita a solução (FECHADO) ou reabre (EM_ANDAMENTO).
+ *
+ * Responsável pelo chamado = ADMIN ou o TECHNICIAN atribuído a ele. Outros técnicos
+ * podem ver, comentar e assumir chamados sem técnico, mas não mexer nos dos colegas.
  * - FECHADO é final: o chamado não pode mais ser alterado nem receber comentários.
  *
  * Histórico: abertura, mudanças de status e trocas de técnico são registradas
@@ -149,7 +152,16 @@ public class ChamadoService {
     @Transactional
     public ChamadoResponse atualizar(Long id, ChamadoUpdateRequest request, Long usuarioLogadoId) {
         Chamado chamado = buscarEntidade(id);
-        garantirAcesso(chamado, usuarioLogadoId);
+        Usuario autor = usuarioService.buscarEntidade(usuarioLogadoId);
+        boolean dono = ehDono(chamado, autor);
+        boolean responsavel = ehResponsavel(chamado, autor);
+
+        // Editam: o dono e o responsável. Outros técnicos só veem e comentam.
+        if (!dono && !responsavel) {
+            throw new AcessoNegadoException(ehEquipe(autor)
+                    ? "Só o técnico atribuído ao chamado ou um administrador pode editá-lo."
+                    : "Você só pode acessar os chamados que abriu.");
+        }
         garantirQueNaoEstaFechado(chamado);
 
         boolean mudouPrioridade = request.prioridade() != chamado.getPrioridade();
@@ -157,9 +169,9 @@ public class ChamadoService {
 
         // Prioridade e previsão são decisões do atendimento: o dono pode editar
         // o resto do chamado, mas não pode, por exemplo, marcar o próprio chamado como URGENTE.
-        if ((mudouPrioridade || mudouPrevisao) && !ehEquipe(usuarioService.buscarEntidade(usuarioLogadoId))) {
+        if ((mudouPrioridade || mudouPrevisao) && !responsavel) {
             throw new AcessoNegadoException(
-                    "Só técnicos e administradores podem alterar a prioridade e a previsão de resolução.");
+                    "Só o técnico atribuído ou um administrador pode alterar a prioridade e a previsão de resolução.");
         }
         if (mudouPrevisao && request.dataPrevisaoResolucao() != null
                 && request.dataPrevisaoResolucao().isBefore(LocalDate.now())) {
@@ -189,6 +201,20 @@ public class ChamadoService {
     @Transactional
     public ChamadoResponse atribuirTecnico(Long id, Long tecnicoId, Long usuarioLogadoId) {
         Chamado chamado = buscarEntidade(id);
+        Usuario autor = usuarioService.buscarEntidade(usuarioLogadoId);
+
+        // Admin atribui ou transfere para qualquer técnico. Um técnico só pode
+        // ASSUMIR (atribuir a si mesmo) um chamado que ainda está sem técnico.
+        if (autor.getRole() != Role.ADMIN) {
+            if (!autor.getId().equals(tecnicoId)) {
+                throw new AcessoNegadoException(
+                        "Técnicos só podem assumir chamados para si. Para transferir, peça a um administrador.");
+            }
+            if (chamado.getTecnico() != null) {
+                throw new AcessoNegadoException(
+                        "Este chamado já tem técnico. Para transferir, peça a um administrador.");
+            }
+        }
 
         if (chamado.getStatus() == StatusChamado.RESOLVIDO || chamado.getStatus() == StatusChamado.FECHADO) {
             throw new RegraNegocioException("Não é possível trocar o técnico de um chamado " + chamado.getStatus() + ".");
@@ -209,7 +235,7 @@ public class ChamadoService {
         }
 
         chamado.setTecnico(tecnico);
-        registrar(chamado, usuarioService.buscarEntidade(usuarioLogadoId), TipoHistorico.TECNICO,
+        registrar(chamado, autor, TipoHistorico.TECNICO,
                 anterior == null
                         ? "Técnico atribuído: " + tecnico.getName() + "."
                         : "Técnico alterado de " + anterior.getName() + " para " + tecnico.getName() + ".");
@@ -310,17 +336,19 @@ public class ChamadoService {
     }
 
     /**
-     * Técnicos e admins podem mudar o status em qualquer etapa.
+     * O responsável (técnico atribuído ou admin) pode mudar o status em qualquer etapa.
      * O dono do chamado só decide depois que o técnico marcou como RESOLVIDO:
      * a partir daí, o mapa de transições só permite FECHADO ou EM_ANDAMENTO,
      * que são exatamente "aceitar a solução" e "reabrir".
      */
     private void garantirPermissaoDeStatus(Chamado chamado, Usuario autor) {
-        if (ehEquipe(autor)) {
+        if (ehResponsavel(chamado, autor)) {
             return;
         }
-        if (!chamado.getUsuario().getId().equals(autor.getId())) {
-            throw new AcessoNegadoException("Você só pode acessar os chamados que abriu.");
+        if (!ehDono(chamado, autor)) {
+            throw new AcessoNegadoException(ehEquipe(autor)
+                    ? "Só o técnico atribuído ao chamado ou um administrador pode alterar o status."
+                    : "Você só pode acessar os chamados que abriu.");
         }
         if (chamado.getStatus() != StatusChamado.RESOLVIDO) {
             throw new AcessoNegadoException(
@@ -333,7 +361,21 @@ public class ChamadoService {
         return tecnico != null && tecnico.isAtivo() && tecnico.getRole() == Role.TECHNICIAN;
     }
 
-    // "Equipe de atendimento": técnicos e admins.
+    private boolean ehDono(Chamado chamado, Usuario usuario) {
+        return chamado.getUsuario().getId().equals(usuario.getId());
+    }
+
+    // Responsável pelo chamado: qualquer admin, ou o técnico atribuído a ele.
+    private boolean ehResponsavel(Chamado chamado, Usuario usuario) {
+        if (usuario.getRole() == Role.ADMIN) {
+            return true;
+        }
+        return usuario.getRole() == Role.TECHNICIAN
+                && chamado.getTecnico() != null
+                && chamado.getTecnico().getId().equals(usuario.getId());
+    }
+
+    // "Equipe de atendimento": técnicos e admins (podem ver e comentar qualquer chamado).
     private boolean ehEquipe(Usuario usuario) {
         return usuario.getRole() == Role.TECHNICIAN || usuario.getRole() == Role.ADMIN;
     }
