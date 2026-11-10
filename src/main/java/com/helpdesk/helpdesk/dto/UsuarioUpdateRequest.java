@@ -20,7 +20,8 @@ public record UsuarioUpdateRequest(
         @Email(message = "E-mail inválido.")
         String email,
 
-        @Pattern(regexp = "^(\\d{11}|\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2})?$", message = "CPF deve ter 11 dígitos.")
+        // Espaços em volta são aceitos: o service remove e, se sobrar vazio, grava null.
+        @Pattern(regexp = "^\\s*(\\d{11}|\\d{3}\\.\\d{3}\\.\\d{3}-\\d{2})?\\s*$", message = "CPF deve ter 11 dígitos.")
         String cpf,
 
         @Size(max = 30, message = "A matrícula deve ter no máximo 30 caracteres.")
