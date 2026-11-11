@@ -283,7 +283,8 @@ public class UsuarioService {
     }
 
     private Departamento buscarDepartamentoAtivo(Long departamentoId) {
-        Departamento departamento = departamentoService.buscarEntidade(departamentoId);
+        // Impede a desativação entre esta validação e a gravação do vínculo do usuário.
+        Departamento departamento = departamentoService.buscarComBloqueio(departamentoId);
 
         if (!departamento.isAtivo()) {
             throw new RegraNegocioException("O departamento \"" + departamento.getNome() + "\" está desativado.");

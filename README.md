@@ -87,9 +87,10 @@ Na primeira execução, o **seed** popula o banco com dados de teste (veja abaix
 
 Os testes unitários dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
 
-Os testes `ChamadoConcorrenciaTest`, `AdministradorConcorrenciaTest` e
-`SolicitacaoConcorrenciaTest` verificam, com PostgreSQL real, atribuições simultâneas,
-a proteção do último admin ativo e a prevenção de solicitações pendentes duplicadas.
+Os testes de concorrência (`*ConcorrenciaTest`) verificam, com PostgreSQL real,
+atribuições simultâneas, a proteção do último admin ativo,
+a prevenção de solicitações pendentes duplicadas e a desativação de departamentos
+durante cadastros e transferências de usuários.
 Eles só executam quando `TEST_DB_URL` aponta explicitamente para um banco chamado
 `helpdesk_concorrencia_test`. Esse banco deve ser exclusivo para testes: suas tabelas
 são criadas e apagadas durante a execução. Os testes não importam o `.env` nem rodam o seed.
@@ -417,6 +418,11 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
   Se a próxima operação remover o último admin ativo, ela recebe `409 Conflict` e é desfeita.
 - Não é possível cadastrar usuários nem abrir chamados em departamentos desativados.
 - Um departamento só pode ser desativado quando **não tem usuários ativos**. Antes, é preciso movê-los para outro departamento.
+- Cadastro de usuários, transferência para outro departamento e desativação bloqueiam
+  a mesma linha de departamento até o fim da transação. Se a desativação terminar primeiro,
+  o cadastro ou a transferência recebe `409 Conflict`. Se o vínculo terminar primeiro,
+  a desativação espera, conta o novo usuário ativo e recebe `409`. Uma transferência
+  recusada mantém o usuário no departamento de origem.
 - Usuários e departamentos nunca são apagados, só **desativados**, porque chamados antigos continuam ligados a eles.
 - Senhas são guardadas com **BCrypt** e nunca aparecem nas respostas da API.
 

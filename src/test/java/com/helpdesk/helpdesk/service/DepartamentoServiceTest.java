@@ -23,6 +23,8 @@ import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.repository.DepartamentoRepository;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
+import jakarta.persistence.EntityManager;
+
 /**
  * Teste unitário: o repository é simulado (mock) com Mockito,
  * então o teste roda sem banco de dados.
@@ -35,6 +37,9 @@ class DepartamentoServiceTest {
 
     @Mock
     private UsuarioRepository usuarioRepository;
+
+    @Mock
+    private EntityManager entityManager;
 
     @InjectMocks
     private DepartamentoService departamentoService;
@@ -84,7 +89,7 @@ class DepartamentoServiceTest {
     @Test
     void desativar_deveMarcarComoInativo() {
         Departamento existente = departamentoComId(1L, "TI");
-        when(departamentoRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(departamentoRepository.buscarPorIdComBloqueio(1L)).thenReturn(Optional.of(existente));
 
         departamentoService.desativar(1L);
 
@@ -95,7 +100,7 @@ class DepartamentoServiceTest {
     void desativar_deveRecusarQuandoJaEstaInativo() {
         Departamento existente = departamentoComId(1L, "TI");
         existente.setAtivo(false);
-        when(departamentoRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(departamentoRepository.buscarPorIdComBloqueio(1L)).thenReturn(Optional.of(existente));
 
         assertThatThrownBy(() -> departamentoService.desativar(1L))
                 .isInstanceOf(RegraNegocioException.class);
@@ -104,7 +109,7 @@ class DepartamentoServiceTest {
     @Test
     void desativar_deveRecusarQuandoHaUsuariosAtivos() {
         Departamento existente = departamentoComId(1L, "TI");
-        when(departamentoRepository.findById(1L)).thenReturn(Optional.of(existente));
+        when(departamentoRepository.buscarPorIdComBloqueio(1L)).thenReturn(Optional.of(existente));
         when(usuarioRepository.countByDepartamentoIdAndAtivoTrue(1L)).thenReturn(3L);
 
         assertThatThrownBy(() -> departamentoService.desativar(1L))

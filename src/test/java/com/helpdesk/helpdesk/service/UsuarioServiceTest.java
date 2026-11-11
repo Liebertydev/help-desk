@@ -69,7 +69,7 @@ class UsuarioServiceTest {
 
     @Test
     void criar_deveCriptografarSenhaENormalizarDados() {
-        when(departamentoService.buscarEntidade(1L)).thenReturn(ti);
+        when(departamentoService.buscarComBloqueio(1L)).thenReturn(ti);
         when(usuarioRepository.save(any(Usuario.class))).thenAnswer(inv -> inv.getArgument(0));
 
         UsuarioResponse resposta = usuarioService.criar(new UsuarioRequest(
@@ -101,7 +101,7 @@ class UsuarioServiceTest {
     @Test
     void criar_deveRecusarDepartamentoDesativado() {
         ti.setAtivo(false);
-        when(departamentoService.buscarEntidade(1L)).thenReturn(ti);
+        when(departamentoService.buscarComBloqueio(1L)).thenReturn(ti);
 
         assertThatThrownBy(() -> usuarioService.criar(new UsuarioRequest(
                 "Ana", "ana@email.com", "segredo123", null, null, null, 1L)))
@@ -119,6 +119,23 @@ class UsuarioServiceTest {
                 "Ana Maria", "ana@email.com", null, null, null, 1L));
 
         assertThat(resposta.name()).isEqualTo("Ana Maria");
+    }
+
+    @Test
+    void atualizar_deveRecusarTransferenciaParaDepartamentoDesativado() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        Departamento destino = new Departamento("Financeiro");
+        destino.setId(2L);
+        destino.setAtivo(false);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        when(departamentoService.buscarComBloqueio(2L)).thenReturn(destino);
+
+        assertThatThrownBy(() -> usuarioService.atualizar(10L,
+                new UsuarioUpdateRequest("Ana", "ana@email.com", null, null, null, 2L)))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("desativado");
+
+        assertThat(usuario.getDepartamento()).isSameAs(ti);
     }
 
     @Test
