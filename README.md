@@ -137,7 +137,7 @@ $env:TEST_DB_PASSWORD = ''
 ```
 
 Sem `TEST_DB_URL`, esses testes são ignorados. Os testes unitários e HTTP podem ser
-executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,*RunnerTest,UsuarioRequestValidacaoTest,SessaoConfigTest`.
+executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,*RunnerTest,*ValidacaoTest,SessaoConfigTest`.
 
 ### Atualizando um banco criado antes da categoria fixa e da sala
 
@@ -294,6 +294,13 @@ Algumas rotas têm, além do ícone, uma regra sobre **qual registro** a pessoa 
 ```
 
 `cpf`, `matricula` e `ocupacao` são opcionais. O e-mail é salvo em minúsculas e o CPF só com os dígitos.
+
+No cadastro e na troca de senha, a nova senha deve ter pelo menos 6 caracteres e
+no máximo **72 bytes em UTF-8**, conforme o limite do BCrypt. Acentos e emojis
+podem ocupar mais de um byte. Por exemplo, 36 letras `é` ocupam 72 bytes; 37 já
+ultrapassam o limite e retornam `400`, antes de gravar a senha ou encerrar sessões.
+A API não corta nem remove espaços da senha. O primeiro admin de produção mantém
+a exigência específica de pelo menos 12 caracteres.
 </details>
 
 ### Chamados — `/api/chamados`
@@ -507,7 +514,7 @@ Em erros de validação, o campo `campos` traz a mensagem de cada campo inválid
   "mensagem": "Existem campos inválidos.",
   "campos": {
     "email": "E-mail inválido.",
-    "password": "A senha deve ter entre 6 e 72 caracteres."
+    "password": "A senha deve ter no máximo 72 bytes em UTF-8."
   }
 }
 ```
