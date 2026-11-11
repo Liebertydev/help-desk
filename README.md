@@ -85,7 +85,24 @@ Na primeira execução, o **seed** popula o banco com dados de teste (veja abaix
 ./mvnw test
 ```
 
-Os testes dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
+Os testes unitários dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
+
+O `ChamadoConcorrenciaTest` verifica duas atribuições simultâneas com PostgreSQL real.
+Ele só executa quando `TEST_DB_URL` aponta explicitamente para um banco chamado
+`helpdesk_concorrencia_test`. Esse banco deve ser exclusivo para testes: suas tabelas
+são criadas e apagadas durante a execução. O teste não importa o `.env` nem roda o seed.
+
+Exemplo no PowerShell, depois de criar esse banco vazio em uma instância de teste:
+
+```powershell
+$env:TEST_DB_URL = 'jdbc:postgresql://127.0.0.1:55439/helpdesk_concorrencia_test'
+$env:TEST_DB_USERNAME = 'helpdesk_test'
+$env:TEST_DB_PASSWORD = ''
+.\mvnw.cmd '-Dtest=ChamadoConcorrenciaTest' test
+```
+
+Sem `TEST_DB_URL`, esse teste é ignorado. Os testes unitários e HTTP podem ser
+executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,UsuarioRequestValidacaoTest,SessaoConfigTest`.
 
 ### Atualizando um banco criado antes da categoria fixa e da sala
 
@@ -369,6 +386,11 @@ ABERTO → EM_ANDAMENTO → RESOLVIDO → FECHADO
 - Só é possível ir para `EM_ANDAMENTO` com um técnico atribuído.
 - Depois que o técnico marca `RESOLVIDO`, **o dono do chamado** decide: aceita a solução (`FECHADO`) ou reabre (`EM_ANDAMENTO`). O responsável também pode fazer isso.
 - Só usuários `TECHNICIAN` ativos podem ser atribuídos, e o técnico não pode ser trocado em chamados `RESOLVIDO` ou `FECHADO`.
+- A atribuição bloqueia o chamado no banco até concluir a transação, incluindo o histórico.
+  Se dois técnicos tentarem assumir o mesmo chamado, a segunda tentativa espera a primeira
+  terminar e verifica os dados atualizados. Se o chamado já tiver técnico, recebe `409 Conflict`
+  com orientação para atualizar a fila. Apenas a atribuição concluída fica no histórico.
+  O admin continua podendo transferir chamados. Falhas ao obter o bloqueio também retornam `409`.
 - `FECHADO` é final: o chamado não muda mais de status, não pode ser editado e não aceita comentários, **nem do admin**.
 - A previsão de resolução não pode ser **alterada** para uma data no passado. Uma previsão antiga que só está sendo mantida na edição é aceita.
 

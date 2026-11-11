@@ -200,7 +200,11 @@ public class ChamadoService {
      */
     @Transactional
     public ChamadoResponse atribuirTecnico(Long id, Long tecnicoId, Long usuarioLogadoId) {
-        Chamado chamado = buscarEntidade(id);
+        // Buscar com bloqueio ANTES de verificar o técnico evita que duas pessoas
+        // vejam o mesmo chamado sem responsável e consigam assumi-lo ao mesmo tempo.
+        // O bloqueio só é liberado após salvar também o histórico e concluir a transação.
+        Chamado chamado = chamadoRepository.buscarPorIdParaAtribuicao(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Chamado", id));
         Usuario autor = usuarioService.buscarEntidade(usuarioLogadoId);
 
         // Admin atribui ou transfere para qualquer técnico. Um técnico só pode
@@ -211,8 +215,8 @@ public class ChamadoService {
                         "Técnicos só podem assumir chamados para si. Para transferir, peça a um administrador.");
             }
             if (chamado.getTecnico() != null) {
-                throw new AcessoNegadoException(
-                        "Este chamado já tem técnico. Para transferir, peça a um administrador.");
+                throw new RegraNegocioException(
+                        "Este chamado já tem técnico. Atualize a fila. Para transferir, peça a um administrador.");
             }
         }
 

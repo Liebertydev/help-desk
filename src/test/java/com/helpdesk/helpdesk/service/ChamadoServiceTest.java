@@ -26,6 +26,7 @@ import com.helpdesk.helpdesk.dto.ChamadoUpdateRequest;
 import com.helpdesk.helpdesk.dto.ComentarioRequest;
 import com.helpdesk.helpdesk.dto.HistoricoChamadoResponse;
 import com.helpdesk.helpdesk.exception.AcessoNegadoException;
+import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Categoria;
 import com.helpdesk.helpdesk.models.Chamado;
@@ -110,7 +111,7 @@ class ChamadoServiceTest {
     @Test
     void atribuirTecnico_deveRecusarUsuarioQueNaoETecnico() {
         Chamado chamado = chamado(StatusChamado.ABERTO, null);
-        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(10L)).thenReturn(joao);
 
         assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 10L, 99L))
@@ -121,12 +122,49 @@ class ChamadoServiceTest {
     @Test
     void atribuirTecnico_deveAtribuirTecnicoAtivo() {
         Chamado chamado = chamado(StatusChamado.ABERTO, null);
-        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
 
         ChamadoResponse resposta = chamadoService.atribuirTecnico(1L, 20L, 20L);
 
         assertThat(resposta.tecnicoNome()).isEqualTo("Carlos");
+    }
+
+    @Test
+    void atribuirTecnico_deveInformarQuandoOChamadoNaoExiste() {
+        when(chamadoRepository.buscarPorIdParaAtribuicao(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(99L, 20L, 20L))
+                .isInstanceOf(RecursoNaoEncontradoException.class)
+                .hasMessageContaining("99");
+
+        verify(historicoRepository, never()).save(any());
+    }
+
+    @Test
+    void atribuirTecnico_naoDeveAtribuirTecnicoDesativado() {
+        tecnico.setAtivo(false);
+        Chamado chamado = chamado(StatusChamado.ABERTO, null);
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
+
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 20L, 99L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("desativado");
+
+        assertThat(chamado.getTecnico()).isNull();
+        verify(historicoRepository, never()).save(any());
+    }
+
+    @Test
+    void atribuirTecnico_naoDeveAlterarChamadoFechado() {
+        Chamado chamado = chamado(StatusChamado.FECHADO, tecnico);
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
+
+        assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 20L, 99L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("FECHADO");
+
+        verify(historicoRepository, never()).save(any());
     }
 
     // ---------- alterarStatus ----------
@@ -345,7 +383,7 @@ class ChamadoServiceTest {
     void atribuirTecnico_deveRegistrarTrocaDeTecnico() {
         Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
         Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
-        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(21L)).thenReturn(mariana);
 
         chamadoService.atribuirTecnico(1L, 21L, 99L);
@@ -356,7 +394,7 @@ class ChamadoServiceTest {
     @Test
     void atribuirTecnico_deveRecusarOMesmoTecnico() {
         Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
-        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(20L)).thenReturn(tecnico);
 
         assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 20L, 99L))
@@ -520,21 +558,22 @@ class ChamadoServiceTest {
     void atribuirTecnico_tecnicoNaoPodeAssumirChamadoDeOutro() {
         Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
         Chamado chamado = chamado(StatusChamado.EM_ANDAMENTO, tecnico);
-        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
         when(usuarioService.buscarEntidade(21L)).thenReturn(mariana);
 
         assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 21L, 21L))
-                .isInstanceOf(AcessoNegadoException.class)
+                .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("já tem técnico");
 
         assertThat(chamado.getTecnico()).isEqualTo(tecnico);
+        verify(historicoRepository, never()).save(any());
     }
 
     @Test
     void atribuirTecnico_tecnicoNaoPodeAtribuirOutroTecnico() {
         Usuario mariana = usuario(21L, "Mariana", Role.TECHNICIAN);
         Chamado chamado = chamado(StatusChamado.ABERTO, null);
-        when(chamadoRepository.findById(1L)).thenReturn(Optional.of(chamado));
+        when(chamadoRepository.buscarPorIdParaAtribuicao(1L)).thenReturn(Optional.of(chamado));
 
         assertThatThrownBy(() -> chamadoService.atribuirTecnico(1L, 21L, 20L))
                 .isInstanceOf(AcessoNegadoException.class)
