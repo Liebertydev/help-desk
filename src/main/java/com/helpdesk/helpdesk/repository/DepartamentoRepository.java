@@ -28,6 +28,9 @@ public interface DepartamentoRepository extends JpaRepository<Departamento, Long
     // Usado ao criar: já existe algum departamento com esse nome?
     boolean existsByNomeIgnoreCase(String nome);
 
+    // Permite reutilizar um departamento já preparado ao criar o primeiro administrador.
+    Optional<Departamento> findByNomeIgnoreCase(String nome);
+
     // Usado ao atualizar: existe OUTRO departamento (id diferente) com esse nome?
     boolean existsByNomeIgnoreCaseAndIdNot(String nome, Long id);
 }

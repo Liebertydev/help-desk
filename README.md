@@ -79,6 +79,38 @@ Com **JDK 25**, acrescente `-Djava.version=25` a qualquer comando do Maven:
 
 Na primeira execução, o **seed** popula o banco com dados de teste (veja abaixo).
 
+### Primeira inicialização em produção
+
+Para criar o primeiro administrador sem usar as contas de demonstração, configure
+as variáveis abaixo no ambiente de implantação ou no `.env` local:
+
+```properties
+SPRING_PROFILES_ACTIVE=prod
+BOOTSTRAP_HABILITADO=true
+BOOTSTRAP_ADMIN_NOME=Administrador
+BOOTSTRAP_ADMIN_EMAIL=admin@suaempresa.com
+BOOTSTRAP_ADMIN_SENHA=
+BOOTSTRAP_DEPARTAMENTO=Tecnologia da Informação
+```
+
+**Preencha a senha antes de iniciar**: ela não tem valor padrão e precisa ter pelo
+menos 12 caracteres e no máximo 72 bytes em UTF-8. Depois, inicie a aplicação normalmente.
+Nome, e-mail e departamento também são obrigatórios. Configuração inválida interrompe
+a inicialização, com mensagem que identifica o campo sem mostrar a senha.
+
+O fluxo cria um `ADMIN` ativo com senha BCrypt e seu departamento na mesma transação.
+Se o departamento informado já existir e estiver ativo, ele será reutilizado.
+Um departamento desativado é recusado. Duas instâncias iniciando juntas não duplicam
+o primeiro administrador: a inicialização usa bloqueio no PostgreSQL.
+
+Depois de confirmar o acesso, defina `BOOTSTRAP_HABILITADO=false` e remova
+`BOOTSTRAP_ADMIN_SENHA` da configuração. Nas próximas execuções, contas existentes,
+senhas e permissões são preservadas. Se houver usuários sem nenhum admin ativo,
+o fluxo interrompe a inicialização para revisão manual, sem promover contas existentes.
+
+O fluxo é desabilitado por padrão, só executa no perfil `prod` e recusa a combinação
+`prod,dev`. O cadastro público continua criando apenas usuários `USER`.
+
 ### 5. Testes
 
 ```bash
@@ -90,7 +122,7 @@ Os testes unitários dos services usam Mockito e não precisam de banco. O `Help
 Os testes de concorrência (`*ConcorrenciaTest`) verificam, com PostgreSQL real,
 atribuições simultâneas, a proteção do último admin ativo,
 a prevenção de solicitações pendentes duplicadas e a desativação de departamentos
-durante cadastros e transferências de usuários.
+durante cadastros e transferências de usuários, além da inicialização do primeiro administrador.
 Eles só executam quando `TEST_DB_URL` aponta explicitamente para um banco chamado
 `helpdesk_concorrencia_test`. Esse banco deve ser exclusivo para testes: suas tabelas
 são criadas e apagadas durante a execução. Os testes não importam o `.env` nem rodam o seed.
@@ -105,7 +137,7 @@ $env:TEST_DB_PASSWORD = ''
 ```
 
 Sem `TEST_DB_URL`, esses testes são ignorados. Os testes unitários e HTTP podem ser
-executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,UsuarioRequestValidacaoTest,SessaoConfigTest`.
+executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,*RunnerTest,UsuarioRequestValidacaoTest,SessaoConfigTest`.
 
 ### Atualizando um banco criado antes da categoria fixa e da sala
 
