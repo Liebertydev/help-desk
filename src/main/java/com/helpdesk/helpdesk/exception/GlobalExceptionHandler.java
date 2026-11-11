@@ -7,6 +7,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -62,6 +63,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RegraNegocioException.class)
     public ResponseEntity<ErroResponse> regraNegocio(RegraNegocioException ex, HttpServletRequest request) {
         return resposta(HttpStatus.CONFLICT, ex.getMessage(), request, null);
+    }
+
+    // Uma espera por bloqueio que falhou (ex.: timeout) também é um conflito,
+    // e não um erro interno. O cliente pode atualizar os dados e tentar novamente.
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ErroResponse> conflitoDeBloqueio(PessimisticLockingFailureException ex,
+            HttpServletRequest request) {
+        return resposta(HttpStatus.CONFLICT,
+                "O registro está sendo alterado por outra operação. Atualize os dados e tente novamente.",
+                request, null);
     }
 
     // Disparada pelo @Valid quando o DTO tem campos inválidos.

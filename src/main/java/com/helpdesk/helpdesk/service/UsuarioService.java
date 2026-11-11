@@ -15,8 +15,13 @@ import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.models.Role;
+import com.helpdesk.helpdesk.models.SolicitacaoTecnico;
+import com.helpdesk.helpdesk.models.StatusSolicitacao;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
+import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
+
+import jakarta.persistence.EntityManager;
 
 /**
  * Regras de negócio de usuário.
@@ -32,15 +37,24 @@ public class UsuarioService {
     private final DepartamentoService departamentoService;
     private final FilaAtendimentoService filaAtendimentoService;
     private final PasswordEncoder passwordEncoder;
+    private final SessaoService sessaoService;
+    private final EntityManager entityManager;
+    private final SolicitacaoRepository solicitacaoRepository;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
             DepartamentoService departamentoService,
             FilaAtendimentoService filaAtendimentoService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            SessaoService sessaoService,
+            EntityManager entityManager,
+            SolicitacaoRepository solicitacaoRepository) {
         this.usuarioRepository = usuarioRepository;
         this.departamentoService = departamentoService;
         this.filaAtendimentoService = filaAtendimentoService;
         this.passwordEncoder = passwordEncoder;
+        this.sessaoService = sessaoService;
+        this.entityManager = entityManager;
+        this.solicitacaoRepository = solicitacaoRepository;
     }
 
     // ---------- Consultas ----------
@@ -153,6 +167,8 @@ public class UsuarioService {
         }
 
         usuario.setPassword(passwordEncoder.encode(request.novaSenha()));
+        // Todos os dispositivos, inclusive o atual, precisam entrar com a nova senha.
+        sessaoService.encerrarTodasDoUsuario(id);
     }
 
     // ---------- Ações de administrador ----------
@@ -169,7 +185,7 @@ public class UsuarioService {
             throw new RegraNegocioException("O role é obrigatório.");
         }
 
-        Usuario usuario = buscarEntidade(id);
+        Usuario usuario = buscarParaAlteracaoAdministrativa(id);
 
         if (usuario.getRole() == novoRole) {
             throw new RegraNegocioException("O usuário já possui o role " + novoRole + ".");
@@ -189,7 +205,22 @@ public class UsuarioService {
         }
 
         usuario.setRole(novoRole);
+        // Grava o perfil antes de consultar as pendências. O update também espera
+        // qualquer solicitação que ainda esteja segurando o bloqueio desse usuário.
+        usuarioRepository.flush();
+        encerrarSolicitacoesPendentes(usuario, usuarioLogadoId);
         return UsuarioResponse.from(usuario);
+    }
+
+    /** Aprovar um pedido antigo nunca pode rebaixar alguém que já virou ADMIN ou TECHNICIAN. */
+    @Transactional
+    public UsuarioResponse promoverPorSolicitacao(Long id, Long adminId) {
+        Usuario usuario = buscarParaAlteracaoAdministrativa(id);
+        if (usuario.getRole() != Role.USER) {
+            throw new RegraNegocioException("Só é possível aprovar solicitações de usuários com perfil USER.");
+        }
+        // O mesmo bloqueio é mantido até terminar a transação da aprovação.
+        return alterarRole(id, Role.TECHNICIAN, adminId);
     }
 
     /**
@@ -200,7 +231,7 @@ public class UsuarioService {
      */
     @Transactional
     public void desativar(Long id, Long usuarioLogadoId) {
-        Usuario usuario = buscarEntidade(id);
+        Usuario usuario = buscarParaAlteracaoAdministrativa(id);
 
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("O usuário já está desativado.");
@@ -214,6 +245,8 @@ public class UsuarioService {
         }
 
         usuario.setAtivo(false);
+        // Reativar a conta depois não pode tornar seus tokens antigos válidos novamente.
+        sessaoService.encerrarTodasDoUsuario(id);
     }
 
     @Transactional
@@ -224,6 +257,9 @@ public class UsuarioService {
             throw new RegraNegocioException("O usuário já está ativo.");
         }
 
+        // Reativar também cria um vínculo ativo: o departamento não pode ser desativado
+        // entre esta validação e o commit. Se estiver inativo, o admin deve trocar o vínculo antes.
+        buscarDepartamentoAtivo(usuario.getDepartamento().getId());
         usuario.setAtivo(true);
     }
 
@@ -234,11 +270,63 @@ public class UsuarioService {
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário", id));
     }
 
+    /** Mantém o usuário bloqueado até concluir a transação que cria a solicitação. */
+    @Transactional
+    public Usuario buscarParaSolicitacao(Long id) {
+        Usuario usuario = usuarioRepository.buscarPorIdParaSolicitacao(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário", id));
+        // Recarrega também contas que já estavam na memória desta transação antes da espera.
+        entityManager.refresh(usuario);
+        return usuario;
+    }
+
     // ---------- Auxiliares ----------
+
+    /** Compartilhado por alterações de perfil e avaliações de solicitações. */
+    @Transactional
+    public void bloquearAlteracoesAdministrativas() {
+        usuarioRepository.findFirstByOrderByIdAsc();
+    }
+
+    private Usuario buscarParaAlteracaoAdministrativa(Long id) {
+        // Duas operações sobre admins DIFERENTES também precisam esperar uma pela outra.
+        // Por isso, ambas bloqueiam o primeiro usuário antes de ler a conta e contar admins.
+        // O banco mantém esse bloqueio até o commit ou rollback da transação inteira.
+        bloquearAlteracoesAdministrativas();
+
+        Usuario usuario = buscarEntidade(id);
+        // Uma transação pode ter carregado essa conta antes de esperar pelo bloqueio.
+        // refresh() descarta essa leitura antiga e busca o role e o estado ativo atuais.
+        entityManager.refresh(usuario);
+        return usuario;
+    }
+
+    private void encerrarSolicitacoesPendentes(Usuario usuario, Long adminId) {
+        if (usuario.getRole() == Role.USER) {
+            return;
+        }
+        List<SolicitacaoTecnico> pendentes = solicitacaoRepository.findByUsuarioIdAndStatusOrderByIdAsc(
+                usuario.getId(), StatusSolicitacao.PENDENTE);
+        if (pendentes.isEmpty()) {
+            return;
+        }
+
+        Usuario admin = buscarEntidade(adminId);
+        for (SolicitacaoTecnico solicitacao : pendentes) {
+            if (usuario.getRole() == Role.TECHNICIAN) {
+                solicitacao.avaliar(StatusSolicitacao.APROVADA, admin,
+                        "Acesso concedido pela alteração direta do perfil para TECHNICIAN.");
+            } else {
+                solicitacao.avaliar(StatusSolicitacao.REJEITADA, admin,
+                        "Solicitação encerrada: o usuário passou a ter o perfil ADMIN.");
+            }
+        }
+    }
 
     /**
      * O sistema precisa ter sempre pelo menos um ADMIN ativo: sem ele,
      * ninguém mais conseguiria promover usuários nem aprovar solicitações.
+     * Esta contagem só é feita depois de obter o bloqueio administrativo compartilhado.
      */
     private void garantirQueNaoEOUltimoAdmin(String acao) {
         if (usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN) <= 1) {
@@ -247,7 +335,8 @@ public class UsuarioService {
     }
 
     private Departamento buscarDepartamentoAtivo(Long departamentoId) {
-        Departamento departamento = departamentoService.buscarEntidade(departamentoId);
+        // Impede a desativação entre esta validação e a gravação do vínculo do usuário.
+        Departamento departamento = departamentoService.buscarComBloqueio(departamentoId);
 
         if (!departamento.isAtivo()) {
             throw new RegraNegocioException("O departamento \"" + departamento.getNome() + "\" está desativado.");

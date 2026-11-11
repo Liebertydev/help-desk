@@ -13,6 +13,8 @@ import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.repository.DepartamentoRepository;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
+import jakarta.persistence.EntityManager;
+
 /**
  * Regras de negócio de departamento.
  *
@@ -24,14 +26,17 @@ public class DepartamentoService {
 
     private final DepartamentoRepository departamentoRepository;
     private final UsuarioRepository usuarioRepository;
+    private final EntityManager entityManager;
 
     // Injeção pelo construtor: o Spring entrega os repositories automaticamente.
     // (UsuarioRepository, e não UsuarioService: o UsuarioService já depende deste
     // service, e depender dele de volta criaria uma dependência circular.)
     public DepartamentoService(DepartamentoRepository departamentoRepository,
-            UsuarioRepository usuarioRepository) {
+            UsuarioRepository usuarioRepository,
+            EntityManager entityManager) {
         this.departamentoRepository = departamentoRepository;
         this.usuarioRepository = usuarioRepository;
+        this.entityManager = entityManager;
     }
 
     // readOnly = true: avisa o banco que é só leitura (mais leve).
@@ -85,7 +90,9 @@ public class DepartamentoService {
      */
     @Transactional
     public void desativar(Long id) {
-        Departamento departamento = buscarEntidade(id);
+        // A contagem só acontece após obter o mesmo bloqueio usado pelo cadastro
+        // e pela transferência. Assim, nenhum usuário entra entre a contagem e o commit.
+        Departamento departamento = buscarComBloqueio(id);
 
         if (!departamento.isAtivo()) {
             throw new RegraNegocioException("O departamento já está desativado.");
@@ -121,5 +128,15 @@ public class DepartamentoService {
     public Departamento buscarEntidade(Long id) {
         return departamentoRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Departamento", id));
+    }
+
+    /** O bloqueio permanece até o fim da transação de quem chamou este método. */
+    @Transactional
+    public Departamento buscarComBloqueio(Long id) {
+        Departamento departamento = departamentoRepository.buscarPorIdComBloqueio(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Departamento", id));
+        // Uma leitura anterior da mesma transação pode estar desatualizada após a espera.
+        entityManager.refresh(departamento);
+        return departamento;
     }
 }

@@ -22,4 +22,7 @@ public interface SolicitacaoRepository extends JpaRepository<SolicitacaoTecnico,
 
     // O usuário já tem uma solicitação aguardando avaliação?
     boolean existsByUsuarioIdAndStatus(Long usuarioId, StatusSolicitacao status);
+
+    // Inclui eventuais pendências antigas para encerrar todas quando o perfil muda.
+    List<SolicitacaoTecnico> findByUsuarioIdAndStatusOrderByIdAsc(Long usuarioId, StatusSolicitacao status);
 }

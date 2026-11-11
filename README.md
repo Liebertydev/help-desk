@@ -58,6 +58,8 @@ cp .env.example .env
 | `DB_USERNAME` | `postgres` | Usuário do banco (no Postgres do Homebrew, é o seu usuário do Mac) |
 | `DB_PASSWORD` | *(vazio)* | Senha do banco |
 | `CORS_ORIGENS` | `http://localhost:5173,http://localhost:3000` | Endereços do front autorizados a chamar a API |
+| `SESSAO_DURACAO` | `PT8H` | Validade fixa da sessão após o login, em ISO-8601 (`PT8H` = 8 horas; `PT30M` = 30 minutos) |
+| `SESSAO_INTERVALO_LIMPEZA_MS` | `60000` | Intervalo, em milissegundos, para remover da memória os tokens expirados |
 
 O `.env` **não vai para o git**: cada pessoa tem o seu. Só é preciso preencher o que for diferente do padrão.
 
@@ -77,13 +79,65 @@ Com **JDK 25**, acrescente `-Djava.version=25` a qualquer comando do Maven:
 
 Na primeira execução, o **seed** popula o banco com dados de teste (veja abaixo).
 
+### Primeira inicialização em produção
+
+Para criar o primeiro administrador sem usar as contas de demonstração, configure
+as variáveis abaixo no ambiente de implantação ou no `.env` local:
+
+```properties
+SPRING_PROFILES_ACTIVE=prod
+BOOTSTRAP_HABILITADO=true
+BOOTSTRAP_ADMIN_NOME=Administrador
+BOOTSTRAP_ADMIN_EMAIL=admin@suaempresa.com
+BOOTSTRAP_ADMIN_SENHA=
+BOOTSTRAP_DEPARTAMENTO=Tecnologia da Informação
+```
+
+**Preencha a senha antes de iniciar**: ela não tem valor padrão e precisa ter pelo
+menos 12 caracteres e no máximo 72 bytes em UTF-8. Depois, inicie a aplicação normalmente.
+Nome, e-mail e departamento também são obrigatórios. Configuração inválida interrompe
+a inicialização, com mensagem que identifica o campo sem mostrar a senha.
+
+O fluxo cria um `ADMIN` ativo com senha BCrypt e seu departamento na mesma transação.
+Se o departamento informado já existir e estiver ativo, ele será reutilizado.
+Um departamento desativado é recusado. Duas instâncias iniciando juntas não duplicam
+o primeiro administrador: a inicialização usa bloqueio no PostgreSQL.
+
+Depois de confirmar o acesso, defina `BOOTSTRAP_HABILITADO=false` e remova
+`BOOTSTRAP_ADMIN_SENHA` da configuração. Nas próximas execuções, contas existentes,
+senhas e permissões são preservadas. Se houver usuários sem nenhum admin ativo,
+o fluxo interrompe a inicialização para revisão manual, sem promover contas existentes.
+
+O fluxo é desabilitado por padrão, só executa no perfil `prod` e recusa a combinação
+`prod,dev`. O cadastro público continua criando apenas usuários `USER`.
+
 ### 5. Testes
 
 ```bash
 ./mvnw test
 ```
 
-Os testes dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
+Os testes unitários dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
+
+Os testes de concorrência (`*ConcorrenciaTest`) verificam, com PostgreSQL real,
+atribuições simultâneas, a proteção do último admin ativo,
+a prevenção de solicitações pendentes duplicadas e a desativação de departamentos
+durante cadastros e transferências de usuários, além da inicialização do primeiro administrador.
+Eles só executam quando `TEST_DB_URL` aponta explicitamente para um banco chamado
+`helpdesk_concorrencia_test`. Esse banco deve ser exclusivo para testes: suas tabelas
+são criadas e apagadas durante a execução. Os testes não importam o `.env` nem rodam o seed.
+
+Exemplo no PowerShell, depois de criar esse banco vazio em uma instância de teste:
+
+```powershell
+$env:TEST_DB_URL = 'jdbc:postgresql://127.0.0.1:55439/helpdesk_concorrencia_test'
+$env:TEST_DB_USERNAME = 'helpdesk_test'
+$env:TEST_DB_PASSWORD = ''
+.\mvnw.cmd '-Dtest=*ConcorrenciaTest' test
+```
+
+Sem `TEST_DB_URL`, esses testes são ignorados. Os testes unitários e HTTP podem ser
+executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,*RunnerTest,*ValidacaoTest,SessaoConfigTest`.
 
 ### Atualizando um banco criado antes da categoria fixa e da sala
 
@@ -163,11 +217,24 @@ O seed só roda no perfil `dev`, que também mostra no console cada SQL executad
 
 | Situação | Resposta |
 |---|---|
-| Sem token, token inválido ou após o logout | `401 Unauthorized` |
+| Sem token, token inválido, expirado ou encerrado | `401 Unauthorized` |
 | Logado, mas sem permissão para a ação (role ou dono do registro) | `403 Forbidden` |
 
 > ⚠️ Os tokens ficam em memória: **ao reiniciar a API, todos precisam fazer login de novo.**
 > Usuários desativados perdem o acesso na hora, mesmo com um token válido.
+
+Cada sessão vence **8 horas depois do login**, por padrão. Fazer requisições não renova
+esse prazo. Após o vencimento, a API responde `401` e é necessário fazer login novamente.
+A duração pode ser alterada com `SESSAO_DURACAO` e deve ser maior que zero.
+
+O logout encerra apenas o token enviado. **Trocar a senha ou desativar o usuário encerra
+todas as sessões dele**, em todos os dispositivos. Depois da troca de senha, inclusive
+o dispositivo atual precisa fazer login com a nova senha. Reativar uma conta não
+restaura as sessões antigas.
+
+Tokens expirados são recusados imediatamente, mesmo entre duas limpezas. Uma tarefa
+periódica também remove da memória aqueles que não forem mais usados. As sessões
+continuam locais à instância da API; ainda não há compartilhamento entre servidores.
 
 ---
 
@@ -227,6 +294,13 @@ Algumas rotas têm, além do ícone, uma regra sobre **qual registro** a pessoa 
 ```
 
 `cpf`, `matricula` e `ocupacao` são opcionais. O e-mail é salvo em minúsculas e o CPF só com os dígitos.
+
+No cadastro e na troca de senha, a nova senha deve ter pelo menos 6 caracteres e
+no máximo **72 bytes em UTF-8**, conforme o limite do BCrypt. Acentos e emojis
+podem ocupar mais de um byte. Por exemplo, 36 letras `é` ocupam 72 bytes; 37 já
+ultrapassam o limite e retornam `400`, antes de gravar a senha ou encerrar sessões.
+A API não corta nem remove espaços da senha. O primeiro admin de produção mantém
+a exigência específica de pelo menos 12 caracteres.
 </details>
 
 ### Chamados — `/api/chamados`
@@ -261,12 +335,16 @@ Algumas rotas têm, além do ícone, uma regra sobre **qual registro** a pessoa 
   "local": "Bloco A",
   "sala": "Sala 101",
   "detalheLocal": "Ao lado da porta",
-  "prioridade": "ALTA",
+  "prioridade": "MEDIA",
   "departamentoId": 2
 }
 ```
 
 Só `titulo` e `descricao` são obrigatórios. Sem `departamentoId`, o chamado vai para o departamento de quem abriu. Sem `prioridade`, fica `MEDIA`. Sem `categoria`, fica `OUTROS`.
+
+Na abertura, usuários `USER` só podem omitir a prioridade ou enviar `MEDIA`.
+Outra prioridade retorna `403 Forbidden`. Técnicos e admins podem definir a prioridade
+ao abrir; depois da abertura, continuam valendo as permissões do responsável pelo chamado.
 
 O endereço físico do problema fica em `local` (bloco ou prédio), `sala` e `detalheLocal`. O `departamento` é a área responsável pelo chamado.
 </details>
@@ -354,6 +432,11 @@ ABERTO → EM_ANDAMENTO → RESOLVIDO → FECHADO
 - Só é possível ir para `EM_ANDAMENTO` com um técnico atribuído.
 - Depois que o técnico marca `RESOLVIDO`, **o dono do chamado** decide: aceita a solução (`FECHADO`) ou reabre (`EM_ANDAMENTO`). O responsável também pode fazer isso.
 - Só usuários `TECHNICIAN` ativos podem ser atribuídos, e o técnico não pode ser trocado em chamados `RESOLVIDO` ou `FECHADO`.
+- A atribuição bloqueia o chamado no banco até concluir a transação, incluindo o histórico.
+  Se dois técnicos tentarem assumir o mesmo chamado, a segunda tentativa espera a primeira
+  terminar e verifica os dados atualizados. Se o chamado já tiver técnico, recebe `409 Conflict`
+  com orientação para atualizar a fila. Apenas a atribuição concluída fica no histórico.
+  O admin continua podendo transferir chamados. Falhas ao obter o bloqueio também retornam `409`.
 - `FECHADO` é final: o chamado não muda mais de status, não pode ser editado e não aceita comentários, **nem do admin**.
 - A previsão de resolução não pode ser **alterada** para uma data no passado. Uma previsão antiga que só está sendo mantida na edição é aceita.
 
@@ -370,17 +453,42 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
 
 - E-mail, CPF e matrícula são únicos.
 - O sistema sempre precisa ter **pelo menos um admin ativo**: não é possível rebaixar nem desativar o último.
+- Alterações de role e desativações usam o mesmo ponto de bloqueio no banco, antes de
+  consultar a conta e contar os admins ativos. Esse ponto é a linha do primeiro usuário,
+  que nunca é apagada pela aplicação e continua existindo após desativação ou mudança de role.
+  Assim, mesmo operações sobre admins diferentes esperam uma pela outra até o fim da transação.
+  Depois da espera, a conta é recarregada e a contagem usa o estado atual do banco.
+  Se a próxima operação remover o último admin ativo, ela recebe `409 Conflict` e é desfeita.
 - Não é possível cadastrar usuários nem abrir chamados em departamentos desativados.
+- Reativar um usuário também exige departamento ativo e usa o mesmo bloqueio de vínculo.
+  Se o departamento estiver desativado, transfira o usuário ainda inativo para um departamento
+  ativo e depois reative a conta. A tentativa recusada retorna `409` e mantém a conta inativa.
 - Um departamento só pode ser desativado quando **não tem usuários ativos**. Antes, é preciso movê-los para outro departamento.
+- Cadastro de usuários, transferência para outro departamento e desativação bloqueiam
+  a mesma linha de departamento até o fim da transação. Se a desativação terminar primeiro,
+  o cadastro ou a transferência recebe `409 Conflict`. Se o vínculo terminar primeiro,
+  a desativação espera, conta o novo usuário ativo e recebe `409`. Uma transferência
+  recusada mantém o usuário no departamento de origem.
 - Usuários e departamentos nunca são apagados, só **desativados**, porque chamados antigos continuam ligados a eles.
 - Senhas são guardadas com **BCrypt** e nunca aparecem nas respostas da API.
 
 ### Solicitações de técnico
 
 - Só um usuário `USER` ativo pode solicitar, e apenas uma solicitação `PENDENTE` por vez.
+- A criação bloqueia a linha do solicitante até concluir a transação. Duas requisições
+  da mesma pessoa esperam uma pela outra: a segunda consulta as pendências após a primeira
+  terminar e recebe `409 Conflict` se já houver uma solicitação pendente.
+  Pessoas diferentes podem solicitar ao mesmo tempo.
 - Solicitações já aprovadas ou rejeitadas não podem ser avaliadas de novo.
 - A rejeição exige um **motivo**. Toda avaliação registra o admin que avaliou e quando.
 - Depois de uma rejeição, o usuário pode solicitar outra vez.
+- Uma promoção direta para `TECHNICIAN` aprova as solicitações pendentes, registrando
+  o admin, a data e a justificativa. Uma promoção para `ADMIN` encerra as pendências
+  como `REJEITADA`, com o motivo de que esse perfil já foi concedido.
+- Aprovação, rejeição e alteração de perfil compartilham o bloqueio administrativo.
+  A avaliação recarrega a solicitação após esperar; pedidos já avaliados retornam `409`.
+  Para aprovar, o solicitante precisa continuar sendo `USER` ativo. Uma solicitação
+  antiga nunca rebaixa um `ADMIN` nem altera novamente um `TECHNICIAN`.
 
 ---
 
@@ -406,7 +514,7 @@ Em erros de validação, o campo `campos` traz a mensagem de cada campo inválid
   "mensagem": "Existem campos inválidos.",
   "campos": {
     "email": "E-mail inválido.",
-    "password": "A senha deve ter entre 6 e 72 caracteres."
+    "password": "A senha deve ter no máximo 72 bytes em UTF-8."
   }
 }
 ```

@@ -1,5 +1,7 @@
 package com.helpdesk.helpdesk.dto;
 
+import com.helpdesk.helpdesk.validation.MaximoBytesUtf8;
+
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -21,7 +23,8 @@ public record UsuarioRequest(
         String email,
 
         @NotBlank(message = "A senha é obrigatória.")
-        @Size(min = 6, max = 72, message = "A senha deve ter entre 6 e 72 caracteres.")
+        @Size(min = 6, message = "A senha deve ter pelo menos 6 caracteres.")
+        @MaximoBytesUtf8(value = 72, message = "A senha deve ter no máximo 72 bytes em UTF-8.")
         String password,
 
         // Opcional. Aceita com ou sem máscara: 12345678901 ou 123.456.789-01.
