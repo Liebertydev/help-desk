@@ -79,9 +79,18 @@ class DepartamentoConcorrenciaTest {
     }
 
     @ParameterizedTest
-    @CsvSource({ "CADASTRO, true", "TRANSFERENCIA, true", "CADASTRO, false", "TRANSFERENCIA, false" })
+    @CsvSource({ "CADASTRO, true", "TRANSFERENCIA, true", "REATIVACAO, true",
+            "CADASTRO, false", "TRANSFERENCIA, false", "REATIVACAO, false" })
     void deveManterDepartamentoEUsuariosConsistentes(Operacao operacao, boolean desativarPrimeiro) throws Exception {
         TransactionTemplate transacao = new TransactionTemplate(gerenciadorDeTransacoes);
+
+        if (operacao == Operacao.REATIVACAO) {
+            transacao.executeWithoutResult(status -> {
+                Usuario usuario = usuarioRepository.findById(usuarioId).orElseThrow();
+                usuario.setAtivo(false);
+                usuario.setDepartamento(departamentoRepository.findById(destinoId).orElseThrow());
+            });
+        }
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             Future<?> segundaTentativa = transacao.execute(status -> {
@@ -120,8 +129,12 @@ class DepartamentoConcorrenciaTest {
                 .isEqualTo(desativarPrimeiro ? 0 : 1);
         if (desativarPrimeiro) {
             // A transferência recusada preserva a origem; o cadastro recusado não cria conta.
-            assertThat(usuarioRepository.findById(usuarioId).orElseThrow().getDepartamento().getId())
-                    .isEqualTo(origemId);
+            Usuario usuario = usuarioRepository.findById(usuarioId).orElseThrow();
+            if (operacao == Operacao.REATIVACAO) {
+                assertThat(usuario.isAtivo()).isFalse();
+            } else {
+                assertThat(usuario.getDepartamento().getId()).isEqualTo(origemId);
+            }
             assertThat(usuarioRepository.existsByEmailIgnoreCase("novo@teste.com")).isFalse();
         }
     }
@@ -130,9 +143,11 @@ class DepartamentoConcorrenciaTest {
         if (operacao == Operacao.CADASTRO) {
             usuarioService.criar(new UsuarioRequest("Novo usuário", "novo@teste.com", "segredo123",
                     null, null, null, destinoId));
-        } else {
+        } else if (operacao == Operacao.TRANSFERENCIA) {
             usuarioService.atualizar(usuarioId, new UsuarioUpdateRequest("Ana", "ana@teste.com",
                     null, null, null, destinoId));
+        } else {
+            usuarioService.ativar(usuarioId);
         }
     }
 
@@ -162,6 +177,7 @@ class DepartamentoConcorrenciaTest {
 
     private enum Operacao {
         CADASTRO,
-        TRANSFERENCIA
+        TRANSFERENCIA,
+        REATIVACAO
     }
 }

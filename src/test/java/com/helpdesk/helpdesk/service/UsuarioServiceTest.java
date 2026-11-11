@@ -337,6 +337,7 @@ class UsuarioServiceTest {
     void desativar_deveEncerrarTodasAsSessoesSemRestauraLasNaReativacao() {
         Usuario usuario = usuarioComId(10L, Role.USER);
         when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        when(departamentoService.buscarComBloqueio(1L)).thenReturn(ti);
         String tokenDoComputador = sessaoService.criar(10L);
         String tokenDoCelular = sessaoService.criar(10L);
         String tokenDeOutraPessoa = sessaoService.criar(20L);
@@ -352,6 +353,31 @@ class UsuarioServiceTest {
         assertThat(sessaoService.buscarUsuarioId(tokenDoComputador)).isEmpty();
         assertThat(sessaoService.buscarUsuarioId(tokenDoCelular)).isEmpty();
         assertThat(sessaoService.buscarUsuarioId(tokenDeOutraPessoa)).contains(20L);
+    }
+
+    @Test
+    void ativar_deveRecusarDepartamentoDesativado() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        usuario.setAtivo(false);
+        ti.setAtivo(false);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        when(departamentoService.buscarComBloqueio(1L)).thenReturn(ti);
+
+        assertThatThrownBy(() -> usuarioService.ativar(10L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("departamento").hasMessageContaining("desativado");
+        assertThat(usuario.isAtivo()).isFalse();
+    }
+
+    @Test
+    void ativar_deveRecusarUsuarioJaAtivo() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+
+        assertThatThrownBy(() -> usuarioService.ativar(10L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("já está ativo");
+        verify(departamentoService, never()).buscarComBloqueio(any());
     }
 
     private Usuario usuarioComId(Long id, Role role) {

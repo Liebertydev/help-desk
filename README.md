@@ -453,6 +453,9 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
   Depois da espera, a conta é recarregada e a contagem usa o estado atual do banco.
   Se a próxima operação remover o último admin ativo, ela recebe `409 Conflict` e é desfeita.
 - Não é possível cadastrar usuários nem abrir chamados em departamentos desativados.
+- Reativar um usuário também exige departamento ativo e usa o mesmo bloqueio de vínculo.
+  Se o departamento estiver desativado, transfira o usuário ainda inativo para um departamento
+  ativo e depois reative a conta. A tentativa recusada retorna `409` e mantém a conta inativa.
 - Um departamento só pode ser desativado quando **não tem usuários ativos**. Antes, é preciso movê-los para outro departamento.
 - Cadastro de usuários, transferência para outro departamento e desativação bloqueiam
   a mesma linha de departamento até o fim da transação. Se a desativação terminar primeiro,

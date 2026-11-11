@@ -236,6 +236,9 @@ public class UsuarioService {
             throw new RegraNegocioException("O usuário já está ativo.");
         }
 
+        // Reativar também cria um vínculo ativo: o departamento não pode ser desativado
+        // entre esta validação e o commit. Se estiver inativo, o admin deve trocar o vínculo antes.
+        buscarDepartamentoAtivo(usuario.getDepartamento().getId());
         usuario.setAtivo(true);
     }
 
