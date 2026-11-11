@@ -58,6 +58,8 @@ cp .env.example .env
 | `DB_USERNAME` | `postgres` | Usuário do banco (no Postgres do Homebrew, é o seu usuário do Mac) |
 | `DB_PASSWORD` | *(vazio)* | Senha do banco |
 | `CORS_ORIGENS` | `http://localhost:5173,http://localhost:3000` | Endereços do front autorizados a chamar a API |
+| `SESSAO_DURACAO` | `PT8H` | Validade fixa da sessão após o login, em ISO-8601 (`PT8H` = 8 horas; `PT30M` = 30 minutos) |
+| `SESSAO_INTERVALO_LIMPEZA_MS` | `60000` | Intervalo, em milissegundos, para remover da memória os tokens expirados |
 
 O `.env` **não vai para o git**: cada pessoa tem o seu. Só é preciso preencher o que for diferente do padrão.
 
@@ -163,11 +165,24 @@ O seed só roda no perfil `dev`, que também mostra no console cada SQL executad
 
 | Situação | Resposta |
 |---|---|
-| Sem token, token inválido ou após o logout | `401 Unauthorized` |
+| Sem token, token inválido, expirado ou encerrado | `401 Unauthorized` |
 | Logado, mas sem permissão para a ação (role ou dono do registro) | `403 Forbidden` |
 
 > ⚠️ Os tokens ficam em memória: **ao reiniciar a API, todos precisam fazer login de novo.**
 > Usuários desativados perdem o acesso na hora, mesmo com um token válido.
+
+Cada sessão vence **8 horas depois do login**, por padrão. Fazer requisições não renova
+esse prazo. Após o vencimento, a API responde `401` e é necessário fazer login novamente.
+A duração pode ser alterada com `SESSAO_DURACAO` e deve ser maior que zero.
+
+O logout encerra apenas o token enviado. **Trocar a senha ou desativar o usuário encerra
+todas as sessões dele**, em todos os dispositivos. Depois da troca de senha, inclusive
+o dispositivo atual precisa fazer login com a nova senha. Reativar uma conta não
+restaura as sessões antigas.
+
+Tokens expirados são recusados imediatamente, mesmo entre duas limpezas. Uma tarefa
+periódica também remove da memória aqueles que não forem mais usados. As sessões
+continuam locais à instância da API; ainda não há compartilhamento entre servidores.
 
 ---
 

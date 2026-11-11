@@ -63,7 +63,8 @@ public class AuthService {
                 .orElseThrow(() -> new NaoAutenticadoException("Faça login para continuar."));
 
         if (!usuario.isAtivo()) {
-            sessaoService.encerrar(token);
+            // Também descarta os demais tokens se a conta foi desativada fora deste fluxo.
+            sessaoService.encerrarTodasDoUsuario(usuarioId);
             throw new NaoAutenticadoException("Usuário desativado.");
         }
         return usuario;

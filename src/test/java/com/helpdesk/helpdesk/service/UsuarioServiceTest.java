@@ -8,6 +8,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -46,12 +48,16 @@ class UsuarioServiceTest {
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     private UsuarioService usuarioService;
+    private SessaoService sessaoService;
 
     private Departamento ti;
 
     @BeforeEach
     void setUp() {
-        usuarioService = new UsuarioService(usuarioRepository, departamentoService, filaAtendimentoService, passwordEncoder);
+        // Sessões reais em memória: os testes verificam se os tokens deixam mesmo de valer.
+        sessaoService = new SessaoService(Duration.ofHours(8), Clock.systemUTC());
+        usuarioService = new UsuarioService(usuarioRepository, departamentoService, filaAtendimentoService,
+                passwordEncoder, sessaoService);
         ti = new Departamento("TI");
         ti.setId(1L);
     }
@@ -114,11 +120,14 @@ class UsuarioServiceTest {
     void alterarSenha_deveRecusarSenhaAtualErrada() {
         Usuario usuario = usuarioComId(10L, Role.USER);
         when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        String token = sessaoService.criar(10L);
 
         assertThatThrownBy(() -> usuarioService.alterarSenha(10L,
                 new AlterarSenhaRequest("senhaErrada", "novaSenha123")))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("incorreta");
+
+        assertThat(sessaoService.buscarUsuarioId(token)).contains(10L);
     }
 
     @Test
@@ -129,6 +138,35 @@ class UsuarioServiceTest {
         usuarioService.alterarSenha(10L, new AlterarSenhaRequest("123456", "novaSenha123"));
 
         assertThat(passwordEncoder.matches("novaSenha123", usuario.getPassword())).isTrue();
+    }
+
+    @Test
+    void alterarSenha_deveEncerrarTodasAsSessoesApenasDoUsuario() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        String tokenDoComputador = sessaoService.criar(10L);
+        String tokenDoCelular = sessaoService.criar(10L);
+        String tokenDeOutraPessoa = sessaoService.criar(20L);
+
+        usuarioService.alterarSenha(10L, new AlterarSenhaRequest("123456", "novaSenha123"));
+
+        assertThat(sessaoService.buscarUsuarioId(tokenDoComputador)).isEmpty();
+        assertThat(sessaoService.buscarUsuarioId(tokenDoCelular)).isEmpty();
+        assertThat(sessaoService.buscarUsuarioId(tokenDeOutraPessoa)).contains(20L);
+    }
+
+    @Test
+    void alterarSenha_deveManterSessoesQuandoANovaSenhaForIgualAAtual() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        String token = sessaoService.criar(10L);
+
+        assertThatThrownBy(() -> usuarioService.alterarSenha(10L,
+                new AlterarSenhaRequest("123456", "123456")))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("diferente");
+
+        assertThat(sessaoService.buscarUsuarioId(token)).contains(10L);
     }
 
     @Test
@@ -180,11 +218,13 @@ class UsuarioServiceTest {
         Usuario admin = usuarioComId(1L, Role.ADMIN);
         when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
         when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(1L);
+        String token = sessaoService.criar(1L);
 
         assertThatThrownBy(() -> usuarioService.desativar(1L, 99L))
                 .isInstanceOf(RegraNegocioException.class);
 
         assertThat(admin.isAtivo()).isTrue();
+        assertThat(sessaoService.buscarUsuarioId(token)).contains(1L);
     }
 
     @Test
@@ -256,6 +296,27 @@ class UsuarioServiceTest {
         usuarioService.desativar(10L, 99L);
 
         verifyNoInteractions(filaAtendimentoService);
+    }
+
+    @Test
+    void desativar_deveEncerrarTodasAsSessoesSemRestauraLasNaReativacao() {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        String tokenDoComputador = sessaoService.criar(10L);
+        String tokenDoCelular = sessaoService.criar(10L);
+        String tokenDeOutraPessoa = sessaoService.criar(20L);
+
+        usuarioService.desativar(10L, 99L);
+        assertThat(usuario.isAtivo()).isFalse();
+
+        // Nenhum dos tokens antigos foi usado durante a desativação.
+        // Mesmo assim, eles precisam continuar inválidos depois de reativar a conta.
+        usuarioService.ativar(10L);
+
+        assertThat(usuario.isAtivo()).isTrue();
+        assertThat(sessaoService.buscarUsuarioId(tokenDoComputador)).isEmpty();
+        assertThat(sessaoService.buscarUsuarioId(tokenDoCelular)).isEmpty();
+        assertThat(sessaoService.buscarUsuarioId(tokenDeOutraPessoa)).contains(20L);
     }
 
     private Usuario usuarioComId(Long id, Role role) {

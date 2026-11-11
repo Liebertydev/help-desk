@@ -32,15 +32,18 @@ public class UsuarioService {
     private final DepartamentoService departamentoService;
     private final FilaAtendimentoService filaAtendimentoService;
     private final PasswordEncoder passwordEncoder;
+    private final SessaoService sessaoService;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
             DepartamentoService departamentoService,
             FilaAtendimentoService filaAtendimentoService,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            SessaoService sessaoService) {
         this.usuarioRepository = usuarioRepository;
         this.departamentoService = departamentoService;
         this.filaAtendimentoService = filaAtendimentoService;
         this.passwordEncoder = passwordEncoder;
+        this.sessaoService = sessaoService;
     }
 
     // ---------- Consultas ----------
@@ -153,6 +156,8 @@ public class UsuarioService {
         }
 
         usuario.setPassword(passwordEncoder.encode(request.novaSenha()));
+        // Todos os dispositivos, inclusive o atual, precisam entrar com a nova senha.
+        sessaoService.encerrarTodasDoUsuario(id);
     }
 
     // ---------- Ações de administrador ----------
@@ -214,6 +219,8 @@ public class UsuarioService {
         }
 
         usuario.setAtivo(false);
+        // Reativar a conta depois não pode tornar seus tokens antigos válidos novamente.
+        sessaoService.encerrarTodasDoUsuario(id);
     }
 
     @Transactional
