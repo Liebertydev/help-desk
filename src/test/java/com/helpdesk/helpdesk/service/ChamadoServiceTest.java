@@ -15,6 +15,8 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -107,6 +109,34 @@ class ChamadoServiceTest {
     }
 
     // ---------- atribuirTecnico ----------
+
+    @ParameterizedTest
+    @EnumSource(value = Prioridade.class, names = { "BAIXA", "ALTA", "URGENTE" })
+    void abrir_usuarioComumNaoPodeDefinirOutraPrioridade(Prioridade prioridade) {
+        assertThatThrownBy(() -> chamadoService.abrir(aberturaComPrioridade(prioridade), 10L))
+                .isInstanceOf(AcessoNegadoException.class)
+                .hasMessageContaining("prioridade");
+        verify(chamadoRepository, never()).save(any());
+        verify(historicoRepository, never()).save(any());
+    }
+
+    @Test
+    void abrir_usuarioComumPodeInformarPrioridadeMedia() {
+        when(chamadoRepository.save(any(Chamado.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(chamadoService.abrir(aberturaComPrioridade(Prioridade.MEDIA), 10L).prioridade())
+                .isEqualTo(Prioridade.MEDIA);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = { "TECHNICIAN", "ADMIN" })
+    void abrir_equipePodeDefinirPrioridade(Role role) {
+        joao.setRole(role);
+        when(chamadoRepository.save(any(Chamado.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(chamadoService.abrir(aberturaComPrioridade(Prioridade.URGENTE), 10L).prioridade())
+                .isEqualTo(Prioridade.URGENTE);
+    }
 
     @Test
     void atribuirTecnico_deveRecusarUsuarioQueNaoETecnico() {
@@ -598,6 +628,11 @@ class ChamadoServiceTest {
     private ChamadoRequest requestAbertura(Long departamentoId) {
         return new ChamadoRequest("Impressora não imprime", "Papel atolado.", Categoria.IMPRESSORA,
                 "PAT-1", "Impressora", null, null, null, null, departamentoId);
+    }
+
+    private ChamadoRequest aberturaComPrioridade(Prioridade prioridade) {
+        return new ChamadoRequest("Sem internet", "A rede caiu.", Categoria.REDE,
+                null, null, null, null, null, prioridade, null);
     }
 
     private Usuario usuario(Long id, String nome, Role role) {

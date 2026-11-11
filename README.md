@@ -328,12 +328,16 @@ Algumas rotas têm, além do ícone, uma regra sobre **qual registro** a pessoa 
   "local": "Bloco A",
   "sala": "Sala 101",
   "detalheLocal": "Ao lado da porta",
-  "prioridade": "ALTA",
+  "prioridade": "MEDIA",
   "departamentoId": 2
 }
 ```
 
 Só `titulo` e `descricao` são obrigatórios. Sem `departamentoId`, o chamado vai para o departamento de quem abriu. Sem `prioridade`, fica `MEDIA`. Sem `categoria`, fica `OUTROS`.
+
+Na abertura, usuários `USER` só podem omitir a prioridade ou enviar `MEDIA`.
+Outra prioridade retorna `403 Forbidden`. Técnicos e admins podem definir a prioridade
+ao abrir; depois da abertura, continuam valendo as permissões do responsável pelo chamado.
 
 O endereço físico do problema fica em `local` (bloco ou prédio), `sala` e `detalheLocal`. O `departamento` é a área responsável pelo chamado.
 </details>

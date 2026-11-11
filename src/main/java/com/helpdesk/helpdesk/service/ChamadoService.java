@@ -119,6 +119,13 @@ public class ChamadoService {
             throw new RegraNegocioException("Usuário desativado não pode abrir chamados.");
         }
 
+        Prioridade prioridade = request.prioridade() == null ? Prioridade.MEDIA : request.prioridade();
+        // A prioridade é uma decisão do atendimento também na abertura.
+        // O solicitante comum pode omitir o campo ou manter MEDIA, sem escolher outra prioridade.
+        if (!ehEquipe(usuario) && prioridade != Prioridade.MEDIA) {
+            throw new AcessoNegadoException("Só técnicos e administradores podem definir outra prioridade na abertura.");
+        }
+
         // Sem departamento informado, o chamado vai para o departamento de quem abriu.
         Departamento departamento = request.departamentoId() == null
                 ? usuario.getDepartamento()
@@ -140,7 +147,7 @@ public class ChamadoService {
         chamado.setLocal(textoOuNulo(request.local()));
         chamado.setSala(textoOuNulo(request.sala()));
         chamado.setDetalheLocal(textoOuNulo(request.detalheLocal()));
-        chamado.setPrioridade(request.prioridade() == null ? Prioridade.MEDIA : request.prioridade());
+        chamado.setPrioridade(prioridade);
         // status já nasce ABERTO (valor padrão na entidade)
 
         Chamado salvo = chamadoRepository.save(chamado);

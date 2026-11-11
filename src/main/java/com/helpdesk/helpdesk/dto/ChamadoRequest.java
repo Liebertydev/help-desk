@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Size;
  *
  * Quem abre o chamado NÃO vem aqui: é o usuário logado (vem do token).
  * - departamentoId: opcional. Se não vier, usa o departamento do usuário.
- * - prioridade: opcional. Se não vier, fica MEDIA.
+ * - prioridade: opcional. Se não vier, fica MEDIA. Só TECHNICIAN e ADMIN podem escolher outra.
  * - categoria: opcional. Se não vier, fica OUTROS.
  */
 public record ChamadoRequest(
