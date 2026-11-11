@@ -11,10 +11,13 @@ import static org.mockito.Mockito.when;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.Optional;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -29,8 +32,11 @@ import com.helpdesk.helpdesk.exception.AcessoNegadoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.models.Role;
+import com.helpdesk.helpdesk.models.SolicitacaoTecnico;
+import com.helpdesk.helpdesk.models.StatusSolicitacao;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
+import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
 
 import jakarta.persistence.EntityManager;
 
@@ -49,6 +55,9 @@ class UsuarioServiceTest {
     @Mock
     private EntityManager entityManager;
 
+    @Mock
+    private SolicitacaoRepository solicitacaoRepository;
+
     // BCrypt de verdade (não é mock), para testar a criptografia de fato.
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
@@ -62,7 +71,7 @@ class UsuarioServiceTest {
         // Sessões reais em memória: os testes verificam se os tokens deixam mesmo de valer.
         sessaoService = new SessaoService(Duration.ofHours(8), Clock.systemUTC());
         usuarioService = new UsuarioService(usuarioRepository, departamentoService, filaAtendimentoService,
-                passwordEncoder, sessaoService, entityManager);
+                passwordEncoder, sessaoService, entityManager, solicitacaoRepository);
         ti = new Departamento("TI");
         ti.setId(1L);
     }
@@ -385,5 +394,37 @@ class UsuarioServiceTest {
         usuario.setId(id);
         usuario.setRole(role);
         return usuario;
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = { "TECHNICIAN", "ADMIN" })
+    void alterarRole_deveEncerrarPendenciasComAutorEJustificativa(Role novoRole) {
+        Usuario usuario = usuarioComId(10L, Role.USER);
+        Usuario admin = usuarioComId(99L, Role.ADMIN);
+        SolicitacaoTecnico solicitacao = new SolicitacaoTecnico(usuario);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+        when(usuarioRepository.findById(99L)).thenReturn(Optional.of(admin));
+        when(solicitacaoRepository.findByUsuarioIdAndStatusOrderByIdAsc(10L, StatusSolicitacao.PENDENTE))
+                .thenReturn(List.of(solicitacao));
+
+        usuarioService.alterarRole(10L, novoRole, 99L);
+
+        assertThat(solicitacao.getStatus()).isEqualTo(novoRole == Role.TECHNICIAN
+                ? StatusSolicitacao.APROVADA : StatusSolicitacao.REJEITADA);
+        assertThat(solicitacao.getAvaliadoPor()).isSameAs(admin);
+        assertThat(solicitacao.getAvaliadoEm()).isNotNull();
+        assertThat(solicitacao.getObservacao()).contains(novoRole.name());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = { "TECHNICIAN", "ADMIN" })
+    void promoverPorSolicitacao_naoDeveAlterarPerfilQueJaMudou(Role role) {
+        Usuario usuario = usuarioComId(10L, role);
+        when(usuarioRepository.findById(10L)).thenReturn(Optional.of(usuario));
+
+        assertThatThrownBy(() -> usuarioService.promoverPorSolicitacao(10L, 99L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("perfil USER");
+        assertThat(usuario.getRole()).isEqualTo(role);
     }
 }

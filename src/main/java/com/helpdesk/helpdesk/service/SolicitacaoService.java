@@ -16,6 +16,8 @@ import com.helpdesk.helpdesk.models.StatusSolicitacao;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
 
+import jakarta.persistence.EntityManager;
+
 /**
  * Solicitações de usuários para virar técnico.
  *
@@ -29,10 +31,13 @@ public class SolicitacaoService {
 
     private final SolicitacaoRepository solicitacaoRepository;
     private final UsuarioService usuarioService;
+    private final EntityManager entityManager;
 
-    public SolicitacaoService(SolicitacaoRepository solicitacaoRepository, UsuarioService usuarioService) {
+    public SolicitacaoService(SolicitacaoRepository solicitacaoRepository, UsuarioService usuarioService,
+            EntityManager entityManager) {
         this.solicitacaoRepository = solicitacaoRepository;
         this.usuarioService = usuarioService;
+        this.entityManager = entityManager;
     }
 
     // ---------- Consultas ----------
@@ -91,7 +96,7 @@ public class SolicitacaoService {
         SolicitacaoTecnico solicitacao = buscarPendente(id);
         Usuario admin = usuarioService.buscarEntidade(adminId);
 
-        usuarioService.alterarRole(solicitacao.getUsuario().getId(), Role.TECHNICIAN, adminId);
+        usuarioService.promoverPorSolicitacao(solicitacao.getUsuario().getId(), adminId);
         // A observação da aprovação é opcional (o corpo da requisição pode nem vir).
         String observacao = request == null ? null : textoOuNulo(request.observacao());
         solicitacao.avaliar(StatusSolicitacao.APROVADA, admin, observacao);
@@ -113,7 +118,11 @@ public class SolicitacaoService {
     // ---------- Auxiliares ----------
 
     private SolicitacaoTecnico buscarPendente(Long id) {
+        // Usa a mesma ordem das alterações de perfil: bloqueio administrativo primeiro.
+        // Uma avaliação não pode concorrer com outra nem com a promoção direta do usuário.
+        usuarioService.bloquearAlteracoesAdministrativas();
         SolicitacaoTecnico solicitacao = buscarEntidade(id);
+        entityManager.refresh(solicitacao);
 
         if (solicitacao.getStatus() != StatusSolicitacao.PENDENTE) {
             throw new RegraNegocioException("Esta solicitação já foi " + solicitacao.getStatus() + ".");

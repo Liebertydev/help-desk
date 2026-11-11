@@ -475,6 +475,13 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
 - Solicitações já aprovadas ou rejeitadas não podem ser avaliadas de novo.
 - A rejeição exige um **motivo**. Toda avaliação registra o admin que avaliou e quando.
 - Depois de uma rejeição, o usuário pode solicitar outra vez.
+- Uma promoção direta para `TECHNICIAN` aprova as solicitações pendentes, registrando
+  o admin, a data e a justificativa. Uma promoção para `ADMIN` encerra as pendências
+  como `REJEITADA`, com o motivo de que esse perfil já foi concedido.
+- Aprovação, rejeição e alteração de perfil compartilham o bloqueio administrativo.
+  A avaliação recarrega a solicitação após esperar; pedidos já avaliados retornam `409`.
+  Para aprovar, o solicitante precisa continuar sendo `USER` ativo. Uma solicitação
+  antiga nunca rebaixa um `ADMIN` nem altera novamente um `TECHNICIAN`.
 
 ---
 

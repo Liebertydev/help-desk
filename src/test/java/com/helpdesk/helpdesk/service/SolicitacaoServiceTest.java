@@ -26,6 +26,8 @@ import com.helpdesk.helpdesk.models.StatusSolicitacao;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
 
+import jakarta.persistence.EntityManager;
+
 @ExtendWith(MockitoExtension.class)
 class SolicitacaoServiceTest {
 
@@ -34,6 +36,9 @@ class SolicitacaoServiceTest {
 
     @Mock
     private UsuarioService usuarioService;
+
+    @Mock
+    private EntityManager entityManager;
 
     @InjectMocks
     private SolicitacaoService solicitacaoService;
@@ -111,7 +116,7 @@ class SolicitacaoServiceTest {
         assertThat(resposta.avaliadoPorNome()).isEqualTo("Administrador");
         assertThat(resposta.avaliadoEm()).isNotNull();
         assertThat(resposta.observacao()).isNull();
-        verify(usuarioService).alterarRole(10L, Role.TECHNICIAN, 99L);
+        verify(usuarioService).promoverPorSolicitacao(10L, 99L);
     }
 
     @Test
@@ -119,7 +124,7 @@ class SolicitacaoServiceTest {
         SolicitacaoTecnico solicitacao = solicitacao(StatusSolicitacao.PENDENTE);
         when(solicitacaoRepository.findById(1L)).thenReturn(Optional.of(solicitacao));
         when(usuarioService.buscarEntidade(99L)).thenReturn(admin);
-        when(usuarioService.alterarRole(10L, Role.TECHNICIAN, 99L))
+        when(usuarioService.promoverPorSolicitacao(10L, 99L))
                 .thenThrow(new RegraNegocioException("Não é possível alterar o role de um usuário desativado."));
 
         assertThatThrownBy(() -> solicitacaoService.aprovar(1L, 99L, null))

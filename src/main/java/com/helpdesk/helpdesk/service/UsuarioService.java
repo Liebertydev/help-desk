@@ -15,8 +15,11 @@ import com.helpdesk.helpdesk.exception.RecursoNaoEncontradoException;
 import com.helpdesk.helpdesk.exception.RegraNegocioException;
 import com.helpdesk.helpdesk.models.Departamento;
 import com.helpdesk.helpdesk.models.Role;
+import com.helpdesk.helpdesk.models.SolicitacaoTecnico;
+import com.helpdesk.helpdesk.models.StatusSolicitacao;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
+import com.helpdesk.helpdesk.repository.SolicitacaoRepository;
 
 import jakarta.persistence.EntityManager;
 
@@ -36,19 +39,22 @@ public class UsuarioService {
     private final PasswordEncoder passwordEncoder;
     private final SessaoService sessaoService;
     private final EntityManager entityManager;
+    private final SolicitacaoRepository solicitacaoRepository;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
             DepartamentoService departamentoService,
             FilaAtendimentoService filaAtendimentoService,
             PasswordEncoder passwordEncoder,
             SessaoService sessaoService,
-            EntityManager entityManager) {
+            EntityManager entityManager,
+            SolicitacaoRepository solicitacaoRepository) {
         this.usuarioRepository = usuarioRepository;
         this.departamentoService = departamentoService;
         this.filaAtendimentoService = filaAtendimentoService;
         this.passwordEncoder = passwordEncoder;
         this.sessaoService = sessaoService;
         this.entityManager = entityManager;
+        this.solicitacaoRepository = solicitacaoRepository;
     }
 
     // ---------- Consultas ----------
@@ -199,7 +205,22 @@ public class UsuarioService {
         }
 
         usuario.setRole(novoRole);
+        // Grava o perfil antes de consultar as pendências. O update também espera
+        // qualquer solicitação que ainda esteja segurando o bloqueio desse usuário.
+        usuarioRepository.flush();
+        encerrarSolicitacoesPendentes(usuario, usuarioLogadoId);
         return UsuarioResponse.from(usuario);
+    }
+
+    /** Aprovar um pedido antigo nunca pode rebaixar alguém que já virou ADMIN ou TECHNICIAN. */
+    @Transactional
+    public UsuarioResponse promoverPorSolicitacao(Long id, Long adminId) {
+        Usuario usuario = buscarParaAlteracaoAdministrativa(id);
+        if (usuario.getRole() != Role.USER) {
+            throw new RegraNegocioException("Só é possível aprovar solicitações de usuários com perfil USER.");
+        }
+        // O mesmo bloqueio é mantido até terminar a transação da aprovação.
+        return alterarRole(id, Role.TECHNICIAN, adminId);
     }
 
     /**
@@ -261,17 +282,45 @@ public class UsuarioService {
 
     // ---------- Auxiliares ----------
 
+    /** Compartilhado por alterações de perfil e avaliações de solicitações. */
+    @Transactional
+    public void bloquearAlteracoesAdministrativas() {
+        usuarioRepository.findFirstByOrderByIdAsc();
+    }
+
     private Usuario buscarParaAlteracaoAdministrativa(Long id) {
         // Duas operações sobre admins DIFERENTES também precisam esperar uma pela outra.
         // Por isso, ambas bloqueiam o primeiro usuário antes de ler a conta e contar admins.
         // O banco mantém esse bloqueio até o commit ou rollback da transação inteira.
-        usuarioRepository.findFirstByOrderByIdAsc();
+        bloquearAlteracoesAdministrativas();
 
         Usuario usuario = buscarEntidade(id);
         // Uma transação pode ter carregado essa conta antes de esperar pelo bloqueio.
         // refresh() descarta essa leitura antiga e busca o role e o estado ativo atuais.
         entityManager.refresh(usuario);
         return usuario;
+    }
+
+    private void encerrarSolicitacoesPendentes(Usuario usuario, Long adminId) {
+        if (usuario.getRole() == Role.USER) {
+            return;
+        }
+        List<SolicitacaoTecnico> pendentes = solicitacaoRepository.findByUsuarioIdAndStatusOrderByIdAsc(
+                usuario.getId(), StatusSolicitacao.PENDENTE);
+        if (pendentes.isEmpty()) {
+            return;
+        }
+
+        Usuario admin = buscarEntidade(adminId);
+        for (SolicitacaoTecnico solicitacao : pendentes) {
+            if (usuario.getRole() == Role.TECHNICIAN) {
+                solicitacao.avaliar(StatusSolicitacao.APROVADA, admin,
+                        "Acesso concedido pela alteração direta do perfil para TECHNICIAN.");
+            } else {
+                solicitacao.avaliar(StatusSolicitacao.REJEITADA, admin,
+                        "Solicitação encerrada: o usuário passou a ter o perfil ADMIN.");
+            }
+        }
     }
 
     /**
