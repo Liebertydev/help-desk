@@ -54,7 +54,7 @@ class SolicitacaoServiceTest {
 
     @Test
     void solicitar_deveCriarSolicitacaoPendente() {
-        when(usuarioService.buscarEntidade(10L)).thenReturn(pedro);
+        when(usuarioService.buscarParaSolicitacao(10L)).thenReturn(pedro);
         when(solicitacaoRepository.save(any(SolicitacaoTecnico.class))).thenAnswer(inv -> inv.getArgument(0));
 
         SolicitacaoTecnicoResponse resposta = solicitacaoService.solicitar(10L);
@@ -66,7 +66,7 @@ class SolicitacaoServiceTest {
     @Test
     void solicitar_deveRecusarQuemJaETecnico() {
         pedro.setRole(Role.TECHNICIAN);
-        when(usuarioService.buscarEntidade(10L)).thenReturn(pedro);
+        when(usuarioService.buscarParaSolicitacao(10L)).thenReturn(pedro);
 
         assertThatThrownBy(() -> solicitacaoService.solicitar(10L))
                 .isInstanceOf(RegraNegocioException.class)
@@ -77,12 +77,26 @@ class SolicitacaoServiceTest {
 
     @Test
     void solicitar_deveRecusarSeJaHouverPendente() {
-        when(usuarioService.buscarEntidade(10L)).thenReturn(pedro);
+        when(usuarioService.buscarParaSolicitacao(10L)).thenReturn(pedro);
         when(solicitacaoRepository.existsByUsuarioIdAndStatus(10L, StatusSolicitacao.PENDENTE)).thenReturn(true);
 
         assertThatThrownBy(() -> solicitacaoService.solicitar(10L))
                 .isInstanceOf(RegraNegocioException.class)
                 .hasMessageContaining("pendente");
+
+        verify(solicitacaoRepository, never()).save(any());
+    }
+
+    @Test
+    void solicitar_deveRecusarUsuarioDesativado() {
+        pedro.setAtivo(false);
+        when(usuarioService.buscarParaSolicitacao(10L)).thenReturn(pedro);
+
+        assertThatThrownBy(() -> solicitacaoService.solicitar(10L))
+                .isInstanceOf(RegraNegocioException.class)
+                .hasMessageContaining("desativado");
+
+        verify(solicitacaoRepository, never()).save(any());
     }
 
     @Test

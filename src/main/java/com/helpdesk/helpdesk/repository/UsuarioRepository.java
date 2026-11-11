@@ -6,6 +6,8 @@ import java.util.Optional;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.Usuario;
@@ -21,6 +23,13 @@ public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
     // Sem EntityGraph: o bloqueio deve atingir apenas essa linha de usuário.
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Usuario> findFirstByOrderByIdAsc();
+
+    // A linha do usuário já existe mesmo antes da primeira solicitação.
+    // Bloqueá-la faz duas solicitações da mesma pessoa esperarem uma pela outra,
+    // sem impedir que pessoas diferentes façam suas solicitações ao mesmo tempo.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select usuario from Usuario usuario where usuario.id = :id")
+    Optional<Usuario> buscarPorIdParaSolicitacao(@Param("id") Long id);
 
     // @EntityGraph: traz o departamento na mesma consulta. Sem ele, como o
     // relacionamento é LAZY, cada departamento diferente gerava uma consulta extra (N+1).

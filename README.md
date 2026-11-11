@@ -87,8 +87,9 @@ Na primeira execução, o **seed** popula o banco com dados de teste (veja abaix
 
 Os testes unitários dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
 
-Os testes `ChamadoConcorrenciaTest` e `AdministradorConcorrenciaTest` verificam,
-com PostgreSQL real, atribuições simultâneas e a proteção do último admin ativo.
+Os testes `ChamadoConcorrenciaTest`, `AdministradorConcorrenciaTest` e
+`SolicitacaoConcorrenciaTest` verificam, com PostgreSQL real, atribuições simultâneas,
+a proteção do último admin ativo e a prevenção de solicitações pendentes duplicadas.
 Eles só executam quando `TEST_DB_URL` aponta explicitamente para um banco chamado
 `helpdesk_concorrencia_test`. Esse banco deve ser exclusivo para testes: suas tabelas
 são criadas e apagadas durante a execução. Os testes não importam o `.env` nem rodam o seed.
@@ -422,6 +423,10 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
 ### Solicitações de técnico
 
 - Só um usuário `USER` ativo pode solicitar, e apenas uma solicitação `PENDENTE` por vez.
+- A criação bloqueia a linha do solicitante até concluir a transação. Duas requisições
+  da mesma pessoa esperam uma pela outra: a segunda consulta as pendências após a primeira
+  terminar e recebe `409 Conflict` se já houver uma solicitação pendente.
+  Pessoas diferentes podem solicitar ao mesmo tempo.
 - Solicitações já aprovadas ou rejeitadas não podem ser avaliadas de novo.
 - A rejeição exige um **motivo**. Toda avaliação registra o admin que avaliou e quando.
 - Depois de uma rejeição, o usuário pode solicitar outra vez.

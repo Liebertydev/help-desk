@@ -246,6 +246,16 @@ public class UsuarioService {
                 .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário", id));
     }
 
+    /** Mantém o usuário bloqueado até concluir a transação que cria a solicitação. */
+    @Transactional
+    public Usuario buscarParaSolicitacao(Long id) {
+        Usuario usuario = usuarioRepository.buscarPorIdParaSolicitacao(id)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("Usuário", id));
+        // Recarrega também contas que já estavam na memória desta transação antes da espera.
+        entityManager.refresh(usuario);
+        return usuario;
+    }
+
     // ---------- Auxiliares ----------
 
     private Usuario buscarParaAlteracaoAdministrativa(Long id) {

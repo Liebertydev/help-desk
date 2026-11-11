@@ -62,7 +62,9 @@ public class SolicitacaoService {
     /** @param usuarioId quem está pedindo (o usuário logado). */
     @Transactional
     public SolicitacaoTecnicoResponse solicitar(Long usuarioId) {
-        Usuario usuario = usuarioService.buscarEntidade(usuarioId);
+        // O bloqueio vem ANTES da consulta de pendências e dura até o commit.
+        // Depois de esperar, outra requisição do mesmo usuário já verá a solicitação criada.
+        Usuario usuario = usuarioService.buscarParaSolicitacao(usuarioId);
 
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("Usuário desativado não pode fazer solicitações.");
