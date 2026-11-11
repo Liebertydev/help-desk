@@ -87,10 +87,11 @@ Na primeira execução, o **seed** popula o banco com dados de teste (veja abaix
 
 Os testes unitários dos services usam Mockito e não precisam de banco. O `HelpdeskApplicationTests` sobe a aplicação inteira e precisa do PostgreSQL configurado no `.env`.
 
-O `ChamadoConcorrenciaTest` verifica duas atribuições simultâneas com PostgreSQL real.
-Ele só executa quando `TEST_DB_URL` aponta explicitamente para um banco chamado
+Os testes `ChamadoConcorrenciaTest` e `AdministradorConcorrenciaTest` verificam,
+com PostgreSQL real, atribuições simultâneas e a proteção do último admin ativo.
+Eles só executam quando `TEST_DB_URL` aponta explicitamente para um banco chamado
 `helpdesk_concorrencia_test`. Esse banco deve ser exclusivo para testes: suas tabelas
-são criadas e apagadas durante a execução. O teste não importa o `.env` nem roda o seed.
+são criadas e apagadas durante a execução. Os testes não importam o `.env` nem rodam o seed.
 
 Exemplo no PowerShell, depois de criar esse banco vazio em uma instância de teste:
 
@@ -98,10 +99,10 @@ Exemplo no PowerShell, depois de criar esse banco vazio em uma instância de tes
 $env:TEST_DB_URL = 'jdbc:postgresql://127.0.0.1:55439/helpdesk_concorrencia_test'
 $env:TEST_DB_USERNAME = 'helpdesk_test'
 $env:TEST_DB_PASSWORD = ''
-.\mvnw.cmd '-Dtest=ChamadoConcorrenciaTest' test
+.\mvnw.cmd '-Dtest=*ConcorrenciaTest' test
 ```
 
-Sem `TEST_DB_URL`, esse teste é ignorado. Os testes unitários e HTTP podem ser
+Sem `TEST_DB_URL`, esses testes são ignorados. Os testes unitários e HTTP podem ser
 executados sem banco com `-Dtest=*ServiceTest,*ControllerTest,UsuarioRequestValidacaoTest,SessaoConfigTest`.
 
 ### Atualizando um banco criado antes da categoria fixa e da sala
@@ -407,6 +408,12 @@ Quando um técnico é **desativado** ou deixa de ser `TECHNICIAN`, inclusive qua
 
 - E-mail, CPF e matrícula são únicos.
 - O sistema sempre precisa ter **pelo menos um admin ativo**: não é possível rebaixar nem desativar o último.
+- Alterações de role e desativações usam o mesmo ponto de bloqueio no banco, antes de
+  consultar a conta e contar os admins ativos. Esse ponto é a linha do primeiro usuário,
+  que nunca é apagada pela aplicação e continua existindo após desativação ou mudança de role.
+  Assim, mesmo operações sobre admins diferentes esperam uma pela outra até o fim da transação.
+  Depois da espera, a conta é recarregada e a contagem usa o estado atual do banco.
+  Se a próxima operação remover o último admin ativo, ela recebe `409 Conflict` e é desfeita.
 - Não é possível cadastrar usuários nem abrir chamados em departamentos desativados.
 - Um departamento só pode ser desativado quando **não tem usuários ativos**. Antes, é preciso movê-los para outro departamento.
 - Usuários e departamentos nunca são apagados, só **desativados**, porque chamados antigos continuam ligados a eles.

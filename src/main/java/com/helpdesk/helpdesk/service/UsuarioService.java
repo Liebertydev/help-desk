@@ -18,6 +18,8 @@ import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
+import jakarta.persistence.EntityManager;
+
 /**
  * Regras de negócio de usuário.
  *
@@ -33,17 +35,20 @@ public class UsuarioService {
     private final FilaAtendimentoService filaAtendimentoService;
     private final PasswordEncoder passwordEncoder;
     private final SessaoService sessaoService;
+    private final EntityManager entityManager;
 
     public UsuarioService(UsuarioRepository usuarioRepository,
             DepartamentoService departamentoService,
             FilaAtendimentoService filaAtendimentoService,
             PasswordEncoder passwordEncoder,
-            SessaoService sessaoService) {
+            SessaoService sessaoService,
+            EntityManager entityManager) {
         this.usuarioRepository = usuarioRepository;
         this.departamentoService = departamentoService;
         this.filaAtendimentoService = filaAtendimentoService;
         this.passwordEncoder = passwordEncoder;
         this.sessaoService = sessaoService;
+        this.entityManager = entityManager;
     }
 
     // ---------- Consultas ----------
@@ -174,7 +179,7 @@ public class UsuarioService {
             throw new RegraNegocioException("O role é obrigatório.");
         }
 
-        Usuario usuario = buscarEntidade(id);
+        Usuario usuario = buscarParaAlteracaoAdministrativa(id);
 
         if (usuario.getRole() == novoRole) {
             throw new RegraNegocioException("O usuário já possui o role " + novoRole + ".");
@@ -205,7 +210,7 @@ public class UsuarioService {
      */
     @Transactional
     public void desativar(Long id, Long usuarioLogadoId) {
-        Usuario usuario = buscarEntidade(id);
+        Usuario usuario = buscarParaAlteracaoAdministrativa(id);
 
         if (!usuario.isAtivo()) {
             throw new RegraNegocioException("O usuário já está desativado.");
@@ -243,9 +248,23 @@ public class UsuarioService {
 
     // ---------- Auxiliares ----------
 
+    private Usuario buscarParaAlteracaoAdministrativa(Long id) {
+        // Duas operações sobre admins DIFERENTES também precisam esperar uma pela outra.
+        // Por isso, ambas bloqueiam o primeiro usuário antes de ler a conta e contar admins.
+        // O banco mantém esse bloqueio até o commit ou rollback da transação inteira.
+        usuarioRepository.findFirstByOrderByIdAsc();
+
+        Usuario usuario = buscarEntidade(id);
+        // Uma transação pode ter carregado essa conta antes de esperar pelo bloqueio.
+        // refresh() descarta essa leitura antiga e busca o role e o estado ativo atuais.
+        entityManager.refresh(usuario);
+        return usuario;
+    }
+
     /**
      * O sistema precisa ter sempre pelo menos um ADMIN ativo: sem ele,
      * ninguém mais conseguiria promover usuários nem aprovar solicitações.
+     * Esta contagem só é feita depois de obter o bloqueio administrativo compartilhado.
      */
     private void garantirQueNaoEOUltimoAdmin(String acao) {
         if (usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN) <= 1) {

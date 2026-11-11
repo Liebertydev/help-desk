@@ -5,11 +5,22 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.Usuario;
 
+import jakarta.persistence.LockModeType;
+
 public interface UsuarioRepository extends JpaRepository<Usuario, Long> {
+
+    // As alterações administrativas usam a mesma linha como ponto fixo de bloqueio.
+    // O primeiro usuário continua existindo mesmo se for desativado ou trocar de role,
+    // porque a aplicação não apaga usuários. Bloquear só os admins ativos não seria
+    // um ponto fixo: esse conjunto muda justamente durante as operações protegidas.
+    // Sem EntityGraph: o bloqueio deve atingir apenas essa linha de usuário.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<Usuario> findFirstByOrderByIdAsc();
 
     // @EntityGraph: traz o departamento na mesma consulta. Sem ele, como o
     // relacionamento é LAZY, cada departamento diferente gerava uma consulta extra (N+1).

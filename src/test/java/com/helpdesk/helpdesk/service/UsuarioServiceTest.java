@@ -32,6 +32,8 @@ import com.helpdesk.helpdesk.models.Role;
 import com.helpdesk.helpdesk.models.Usuario;
 import com.helpdesk.helpdesk.repository.UsuarioRepository;
 
+import jakarta.persistence.EntityManager;
+
 @ExtendWith(MockitoExtension.class)
 class UsuarioServiceTest {
 
@@ -43,6 +45,9 @@ class UsuarioServiceTest {
 
     @Mock
     private FilaAtendimentoService filaAtendimentoService;
+
+    @Mock
+    private EntityManager entityManager;
 
     // BCrypt de verdade (não é mock), para testar a criptografia de fato.
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
@@ -57,7 +62,7 @@ class UsuarioServiceTest {
         // Sessões reais em memória: os testes verificam se os tokens deixam mesmo de valer.
         sessaoService = new SessaoService(Duration.ofHours(8), Clock.systemUTC());
         usuarioService = new UsuarioService(usuarioRepository, departamentoService, filaAtendimentoService,
-                passwordEncoder, sessaoService);
+                passwordEncoder, sessaoService, entityManager);
         ti = new Departamento("TI");
         ti.setId(1L);
     }
@@ -225,6 +230,19 @@ class UsuarioServiceTest {
 
         assertThat(admin.isAtivo()).isTrue();
         assertThat(sessaoService.buscarUsuarioId(token)).contains(1L);
+    }
+
+    @Test
+    void desativar_podeDesativarAdminQuandoHaOutroAtivo() {
+        Usuario admin = usuarioComId(1L, Role.ADMIN);
+        when(usuarioRepository.findById(1L)).thenReturn(Optional.of(admin));
+        when(usuarioRepository.countByRoleAndAtivoTrue(Role.ADMIN)).thenReturn(2L);
+        String token = sessaoService.criar(1L);
+
+        usuarioService.desativar(1L, 99L);
+
+        assertThat(admin.isAtivo()).isFalse();
+        assertThat(sessaoService.buscarUsuarioId(token)).isEmpty();
     }
 
     @Test
