@@ -118,17 +118,18 @@ esses valores e verifique novamente com `pg_isready`.
 
 #### 3. Inicie o front-end
 
-Em outro terminal, entre na pasta do projeto do front-end:
+Em outro terminal, clone o repositório do front-end e entre na pasta criada:
 
 ```bash
-cd /caminho/para/HelpDesk
-npm install
+git clone https://github.com/GeovaneVrs/HelpDesk.git
+cd HelpDesk
+npm i
 npm run dev
 ```
 
-`npm install` só é necessário na primeira vez ou quando as dependências
-mudarem. Mantenha esse terminal aberto e acesse o endereço que o Vite mostrar,
-normalmente `http://localhost:5173`.
+O `npm i` instala as dependências do front-end; execute-o novamente apenas se
+elas mudarem. Mantenha esse terminal aberto e acesse o endereço que o Vite
+mostrar, normalmente `http://localhost:5173`.
 
 No modo de desenvolvimento, o Vite encaminha as chamadas `/api` para
 `http://localhost:8080`; portanto, mantenha a API na porta `8080`. O endereço
