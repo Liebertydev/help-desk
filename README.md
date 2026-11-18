@@ -79,6 +79,71 @@ Com **JDK 25**, acrescente `-Djava.version=25` a qualquer comando do Maven:
 
 Na primeira execução, o **seed** popula o banco com dados de teste (veja abaixo).
 
+### Apresentar com o front-end integrado
+
+Para demonstrar o sistema localmente, deixe o PostgreSQL, a API e o front-end
+rodando ao mesmo tempo. Use dois terminais; o PostgreSQL roda como serviço do
+sistema.
+
+#### 1. Inicie o PostgreSQL
+
+No Linux:
+
+```bash
+sudo systemctl start postgresql
+pg_isready
+```
+
+Continue quando o `pg_isready` informar que o servidor está aceitando conexões
+na porta `5432`. Se o serviço já estiver iniciado, o comando `start` não causa
+problema.
+
+#### 2. Inicie a API
+
+No primeiro terminal, entre na pasta deste projeto e rode:
+
+```bash
+cd /caminho/para/help-desk
+./mvnw spring-boot:run -Djava.version=25
+```
+
+Use `-Djava.version=25` se estiver usando JDK 25; com JDK 26, pode omitir essa
+opção. Mantenha o terminal aberto. A API estará disponível em
+`http://localhost:8080` quando a inicialização terminar.
+
+O banco `helpdesk` precisa existir e as credenciais de `DB_URL`,
+`DB_USERNAME` e `DB_PASSWORD` no `.env` precisam corresponder às configuradas
+no PostgreSQL. Se a API encerrar com erro de autenticação ou conexão, confira
+esses valores e verifique novamente com `pg_isready`.
+
+#### 3. Inicie o front-end
+
+Em outro terminal, entre na pasta do projeto do front-end:
+
+```bash
+cd /caminho/para/HelpDesk
+npm install
+npm run dev
+```
+
+`npm install` só é necessário na primeira vez ou quando as dependências
+mudarem. Mantenha esse terminal aberto e acesse o endereço que o Vite mostrar,
+normalmente `http://localhost:5173`.
+
+No modo de desenvolvimento, o Vite encaminha as chamadas `/api` para
+`http://localhost:8080`; portanto, mantenha a API na porta `8080`. O endereço
+do front (`localhost:5173`) já está permitido pelo CORS padrão da API.
+
+#### 4. Entre e encerre a demonstração
+
+No banco de desenvolvimento vazio, o seed cria contas de demonstração com a
+senha `123456`; por exemplo, `admin@helpdesk.com` para entrar como administrador.
+O seed não substitui nem recria usuários em um banco que já tenha dados.
+
+Ao terminar, pressione `Ctrl+C` nos terminais da API e do front-end. O
+PostgreSQL pode permanecer ativo; não é necessário pará-lo para encerrar a
+demonstração.
+
 ### Primeira inicialização em produção
 
 Para criar o primeiro administrador sem usar as contas de demonstração, configure
